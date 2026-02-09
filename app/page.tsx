@@ -35,7 +35,7 @@ export default function Home(): JSX.Element {
             Sign in to manage RedMesh workloads
           </h1>
           <p className="text-sm leading-relaxed text-slate-300">
-            Authenticate with your RedMesh Demo credentials to inspect tasks, schedule new deployments, and
+            Authenticate with your RedMesh Navigator credentials to inspect tasks, schedule new deployments, and
             check the Ratio1 RedMesh state.
           </p>
           <div className="rounded-2xl border border-white/10 bg-slate-900/60 p-4 text-xs text-slate-300 lg:self-end">

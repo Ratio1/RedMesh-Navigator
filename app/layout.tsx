@@ -7,8 +7,8 @@ import Providers from './providers';
 const inter = Inter({ subsets: ['latin'] });
 
 export const metadata: Metadata = {
-  title: 'RedMesh Demo UI',
-  description: 'Next.js demo UI for Ratio1 RedMesh workflows'
+  title: 'RedMesh Navigator',
+  description: 'Next.js UI for Ratio1 RedMesh workflows'
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {

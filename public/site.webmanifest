@@ -1,7 +1,7 @@
 {
-  "name": "RedMesh Demo",
+  "name": "RedMesh Navigator",
   "short_name": "RedMesh",
-  "description": "Next.js Ratio1 RedMesh Demo",
+  "description": "Next.js Ratio1 RedMesh Navigator",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

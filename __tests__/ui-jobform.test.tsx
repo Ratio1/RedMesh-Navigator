@@ -16,7 +16,7 @@ const session = {
 
 describe('JobForm', () => {
   beforeEach(() => {
-    localStorage.setItem('redmesh-demo-session', JSON.stringify(session));
+    localStorage.setItem('redmesh-navigator-session', JSON.stringify(session));
   });
 
   afterEach(() => {

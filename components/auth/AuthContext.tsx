@@ -21,7 +21,7 @@ interface AuthContextValue {
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
-const SESSION_STORAGE_KEY = 'redmesh-demo-session';
+const SESSION_STORAGE_KEY = 'redmesh-navigator-session';
 
 type StoredSession = { user: UserAccount; token: string };
 
