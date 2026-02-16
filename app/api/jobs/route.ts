@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { fetchJobs, fetchJobsWithReports, createJob } from '@/lib/api/jobs';
 import { ApiError } from '@/lib/api/errors';
 import { CreateJobInput } from '@/lib/api/types';
+import { DURATION } from '@/lib/api/constants';
 import { jobsLogger } from '@/lib/services/logger';
 
 export async function GET(request: Request) {
@@ -80,7 +81,7 @@ export async function POST(request: Request) {
     ? body.features.filter((value: unknown) => typeof value === 'string')
     : undefined;
 
-  const duration = body.duration === 'continuous' ? 'continuous' : 'singlepass';
+  const duration = body.duration === DURATION.CONTINUOUS ? DURATION.CONTINUOUS : DURATION.SINGLEPASS;
   const distribution = body.distribution === 'mirror' ? 'mirror' : 'slice';
 
   // Parse scan delay (dune sand walking) - accepts both scanDelay and tempo for backwards compatibility
@@ -114,7 +115,7 @@ export async function POST(request: Request) {
     ? Number(monitorIntervalRaw)
     : undefined;
 
-  if (duration === 'continuous' && monitorInterval !== undefined && (monitorInterval < 1 || !Number.isInteger(monitorInterval))) {
+  if (duration === DURATION.CONTINUOUS && monitorInterval !== undefined && (monitorInterval < 1 || !Number.isInteger(monitorInterval))) {
     return NextResponse.json(
       { message: 'Monitor interval must be a positive integer (seconds between passes).' },
       { status: 400 }
@@ -143,7 +144,7 @@ export async function POST(request: Request) {
     distribution,
     duration,
     scanDelay,
-    monitorInterval: duration === 'continuous' ? monitorInterval : undefined,
+    monitorInterval: duration === DURATION.CONTINUOUS ? monitorInterval : undefined,
     selectedPeers
   };
 

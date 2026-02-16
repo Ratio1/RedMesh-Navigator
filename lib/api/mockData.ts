@@ -7,6 +7,7 @@ import {
   JobTimelineEntry,
   JobWorkerStatus
 } from './types';
+import { DURATION, RUN_MODE, JOB_STATUS } from './constants';
 import { ApiError } from './errors';
 import { getDefaultFeatureCatalog, getDefaultFeatureIds } from '../domain/features';
 
@@ -124,7 +125,7 @@ function buildJob(partial?: Partial<Job>): Job {
     displayName: 'Mesh Recon - Internal perimeter',
     target: '10.0.5.12',
     initiator: 'ratio1-admin',
-    status: 'completed',
+    status: JOB_STATUS.COMPLETED,
     summary: 'Reconnaissance sweep across the internal perimeter VLAN.',
     createdAt: new Date(now.getTime() - 1000 * 60 * 45).toISOString(),
     updatedAt: completed.toISOString(),
@@ -141,8 +142,8 @@ function buildJob(partial?: Partial<Job>): Job {
     aggregate,
     timeline,
     distribution: 'slice',
-    duration: 'singlepass',
-    runMode: 'singlepass',
+    duration: DURATION.SINGLEPASS,
+    runMode: RUN_MODE.SINGLEPASS,
     portOrder: 'sequential',
     portRange: { start: 1, end: 4096 },
     currentPass: 1,
@@ -189,7 +190,7 @@ const INITIAL_JOBS: Job[] = [
       { label: 'Job stopped', at: new Date() }
     ]),
     distribution: 'mirror',
-    duration: 'continuous',
+    duration: DURATION.CONTINUOUS,
     tempo: { minSeconds: 60, maxSeconds: 240 },
     tempoSteps: { min: 6, max: 12 }
   }),
@@ -197,7 +198,7 @@ const INITIAL_JOBS: Job[] = [
     id: randomUUID(),
     displayName: 'Mesh Diagnostics - Edge Node health',
     target: 'self',
-    status: 'completed',
+    status: JOB_STATUS.COMPLETED,
     summary: 'Queued diagnostic bundle for the Worker App Runner plugin.',
     createdAt: new Date(Date.now() - 1000 * 60 * 5).toISOString(),
     updatedAt: new Date().toISOString(),
@@ -215,7 +216,7 @@ const INITIAL_JOBS: Job[] = [
       { label: 'Job created', at: new Date(Date.now() - 1000 * 60 * 5) },
       { label: 'Diagnostics collected', at: new Date() }
     ]),
-    duration: 'singlepass',
+    duration: DURATION.SINGLEPASS,
     distribution: 'slice',
     tempo: undefined,
     tempoSteps: undefined
@@ -224,7 +225,7 @@ const INITIAL_JOBS: Job[] = [
     id: randomUUID(),
     displayName: 'Mesh Coverage - LATAM edge',
     target: '10.42.0.0/24',
-    status: 'completed',
+    status: JOB_STATUS.COMPLETED,
     summary: 'Coverage sweep across LATAM satellite nodes.',
     createdAt: new Date(Date.now() - 1000 * 60 * 120).toISOString(),
     startedAt: new Date(Date.now() - 1000 * 60 * 110).toISOString(),
@@ -245,7 +246,7 @@ const INITIAL_JOBS: Job[] = [
     id: randomUUID(),
     displayName: 'Mesh Load Test - EU mesh',
     target: 'eu.mesh.ratio1',
-    status: 'completed',
+    status: JOB_STATUS.COMPLETED,
     summary: 'Load test across EU edge nodes to benchmark concurrency.',
     createdAt: new Date(Date.now() - 1000 * 60 * 50).toISOString(),
     updatedAt: new Date().toISOString(),
@@ -327,13 +328,13 @@ let mutableJobs = [...INITIAL_JOBS];
 
 function computeTimelineEntry(status: JobStatus): string {
   switch (status) {
-    case 'running':
+    case JOB_STATUS.RUNNING:
       return 'Workers executing';
-    case 'stopping':
+    case JOB_STATUS.STOPPING:
       return 'Job stopping';
-    case 'stopped':
+    case JOB_STATUS.STOPPED:
       return 'Job stopped';
-    case 'completed':
+    case JOB_STATUS.COMPLETED:
       return 'Job completed';
     default:
       return 'Status updated';
@@ -346,13 +347,13 @@ export function getMockJobs(): Job[] {
 
 export function createMockJob(input: CreateJobInput, owner?: string): Job {
   const now = new Date();
-  const duration = input.duration ?? 'singlepass';
+  const duration = input.duration ?? DURATION.SINGLEPASS;
   const job: Job = {
     id: randomUUID(),
     displayName: input.name,
     target: input.target,
     initiator: owner ?? 'operator',
-    status: 'running',
+    status: JOB_STATUS.RUNNING,
     summary: input.summary,
     createdAt: now.toISOString(),
     updatedAt: now.toISOString(),
@@ -371,7 +372,7 @@ export function createMockJob(input: CreateJobInput, owner?: string): Job {
     lastError: undefined,
     distribution: input.distribution ?? 'slice',
     duration,
-    runMode: duration === 'continuous' ? 'continuous' : 'singlepass',
+    runMode: duration === DURATION.CONTINUOUS ? RUN_MODE.CONTINUOUS : RUN_MODE.SINGLEPASS,
     portOrder: 'sequential',
     portRange: input.portRange,
     currentPass: 1,
@@ -399,11 +400,11 @@ export function transitionMockJob(id: string, status: JobStatus): void {
       ])
     };
 
-    if (status === 'running' && !job.startedAt) {
+    if (status === JOB_STATUS.RUNNING && !job.startedAt) {
       updates.startedAt = now.toISOString();
     }
 
-    if (status === 'completed') {
+    if (status === JOB_STATUS.COMPLETED) {
       updates.completedAt = now.toISOString();
       updates.aggregate = job.aggregate ?? {
         openPorts: [80, 443],

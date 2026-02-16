@@ -7,6 +7,7 @@ import Button from '@/components/ui/Button';
 import Badge from '@/components/ui/Badge';
 import CopyableText from '@/components/ui/CopyableText';
 import type { Job, WorkerReport, PassHistoryEntry, LlmAnalysis } from '@/lib/api/types';
+import { RUN_MODE } from '@/lib/api/constants';
 import { LlmAnalysis as LlmAnalysisComponent } from './LlmAnalysis';
 
 function formatDate(value?: string): string {
@@ -100,8 +101,8 @@ export function WorkerReportsHistory({ job, reports, llmAnalyses }: WorkerReport
                   )}
                 </span>
               </div>
-              {/* LLM Analysis for this pass (continuous mode) */}
-              {llmAnalyses && llmAnalyses[pass.passNr] && (
+              {/* LLM Analysis for this pass (continuous mode only — singlepass shows it at job level) */}
+              {job.runMode === RUN_MODE.CONTINUOUS && llmAnalyses && llmAnalyses[pass.passNr] && (
                 <div className="mb-4">
                   <LlmAnalysisComponent
                     analysis={llmAnalyses[pass.passNr]}

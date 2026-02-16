@@ -4,6 +4,7 @@ import Link from 'next/link';
 import Badge from '@/components/ui/Badge';
 import Button from '@/components/ui/Button';
 import type { Job } from '@/lib/api/types';
+import { RUN_MODE, DURATION, JOB_STATUS } from '@/lib/api/constants';
 
 const DEFAULT_PORT_START = 1;
 const DEFAULT_PORT_END = 65535;
@@ -37,15 +38,15 @@ export function JobHeader({
           <Badge tone="neutral" label={`Priority: ${job.priority}`} />
           <Badge tone="neutral" label={`Status: ${job.status}`} />
           <Badge
-            tone={job.runMode === 'continuous' ? 'warning' : 'neutral'}
-            label={job.runMode === 'continuous' ? 'Continuous Monitoring' : 'Single Pass'}
+            tone={job.runMode === RUN_MODE.CONTINUOUS ? 'warning' : 'neutral'}
+            label={job.runMode === RUN_MODE.CONTINUOUS ? 'Continuous Monitoring' : 'Single Pass'}
           />
           <Badge tone="neutral" label={`${(job.distribution ?? 'slice').toUpperCase()}`} />
           <Badge tone="neutral" label={`Ports: ${job.portRange?.start ?? DEFAULT_PORT_START}-${job.portRange?.end ?? DEFAULT_PORT_END}`} />
         </div>
       </div>
       <div className="flex flex-wrap gap-3">
-        {job.status === 'running' && (
+        {job.status === JOB_STATUS.RUNNING && (
           <Button
             variant="danger"
             size="sm"
@@ -55,7 +56,7 @@ export function JobHeader({
             {stopping ? 'Stopping...' : 'Stop Job'}
           </Button>
         )}
-        {job.status === 'stopping' && (
+        {job.status === JOB_STATUS.STOPPING && (
           <Button
             variant="danger"
             size="sm"
@@ -65,7 +66,7 @@ export function JobHeader({
             Stopping...
           </Button>
         )}
-        {job.duration === 'continuous' && job.status === 'running' && (
+        {job.duration === DURATION.CONTINUOUS && job.status === JOB_STATUS.RUNNING && (
           <Button
             variant="secondary"
             size="sm"
@@ -75,7 +76,7 @@ export function JobHeader({
             {stoppingMonitoring ? 'Stopping...' : 'Stop Monitoring'}
           </Button>
         )}
-        {job.duration === 'continuous' && job.status === 'stopping' && (
+        {job.duration === DURATION.CONTINUOUS && job.status === JOB_STATUS.STOPPING && (
           <Button
             variant="secondary"
             size="sm"

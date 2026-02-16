@@ -15,6 +15,7 @@ import {
   JobWorkerStatus,
   PassHistoryEntry
 } from './types';
+import { RUN_MODE, DURATION, JOB_STATUS } from './constants';
 import { createMockJob, getAvailableFeatures, getMockJobs } from './mockData';
 import { getAppConfig } from '../config/env';
 import { getDefaultFeatureCatalog } from '../domain/features';
@@ -90,16 +91,16 @@ function normalizeWorker(id: string, payload: any): JobWorkerStatus {
 function deriveStatus(raw: any): JobStatus {
   const explicit = (raw?.status ?? raw?.state ?? '').toString().toLowerCase();
   if (['running', 'in_progress', 'in-progress'].includes(explicit)) {
-    return 'running';
+    return JOB_STATUS.RUNNING;
   }
   if (['stopping', 'scheduled_for_stop', 'scheduled-for-stop'].includes(explicit)) {
-    return 'stopping';
+    return JOB_STATUS.STOPPING;
   }
   if (['stopped'].includes(explicit)) {
-    return 'stopped';
+    return JOB_STATUS.STOPPED;
   }
   if (['completed', 'done', 'success', 'finalized'].includes(explicit)) {
-    return 'completed';
+    return JOB_STATUS.COMPLETED;
   }
 
   // Derive from worker states if no explicit status
@@ -107,12 +108,12 @@ function deriveStatus(raw: any): JobStatus {
   if (workers && typeof workers === 'object') {
     const workerList = Object.values(workers) as any[];
     if (workerList.length && workerList.every((worker) => worker?.finished || worker?.done)) {
-      return 'completed';
+      return JOB_STATUS.COMPLETED;
     }
   }
 
   // Default: jobs start as running
-  return 'running';
+  return JOB_STATUS.RUNNING;
 }
 
 function normalizeAggregate(raw: any): JobAggregateReport | undefined {
@@ -140,10 +141,10 @@ function normalizeDistribution(value: unknown): JobDistribution {
 function normalizeDuration(value: unknown): JobDuration {
   const normalized = value?.toString().toLowerCase() ?? '';
   if (['continuous', 'monitor', 'monitoring', 'loop'].includes(normalized)) {
-    return 'continuous';
+    return DURATION.CONTINUOUS;
   }
 
-  return 'singlepass';
+  return DURATION.SINGLEPASS;
 }
 
 function normalizeTempo(raw: any): JobTempo | undefined {
@@ -310,23 +311,23 @@ function normalizeJobFromSpecs(specs: JobSpecs): Job {
   }));
 
   // Derive status from job_status field
-  let status: JobStatus = 'running'; // Jobs start as running
+  let status: JobStatus = JOB_STATUS.RUNNING; // Jobs start as running
   const jobStatus = specs.job_status?.toUpperCase();
   if (jobStatus === 'FINALIZED') {
-    status = 'completed';
+    status = JOB_STATUS.COMPLETED;
   } else if (jobStatus === 'RUNNING') {
-    status = 'running';
+    status = JOB_STATUS.RUNNING;
   } else if (jobStatus === 'SCHEDULED_FOR_STOP') {
-    status = 'stopping';
+    status = JOB_STATUS.STOPPING;
   } else if (jobStatus === 'STOPPED') {
-    status = 'stopped';
+    status = JOB_STATUS.STOPPED;
   }
 
   // Generate timeline from timestamps
   const timeline: JobTimelineEntry[] = [
     { label: 'Job created', at: createdAt }
   ];
-  if (status === 'running' || status === 'stopping' || status === 'completed' || status === 'stopped') {
+  if (status === JOB_STATUS.RUNNING || status === JOB_STATUS.STOPPING || status === JOB_STATUS.COMPLETED || status === JOB_STATUS.STOPPED) {
     timeline.push({ label: 'Job started', at: createdAt });
   }
   if (finalizedAt) {
@@ -337,7 +338,7 @@ function normalizeJobFromSpecs(specs: JobSpecs): Job {
   const distribution: JobDistribution = specs.distribution_strategy === 'MIRROR' ? 'mirror' : 'slice';
 
   // Map run_mode to UI format
-  const runMode: JobRunMode = specs.run_mode === 'CONTINUOUS_MONITORING' ? 'continuous' : 'singlepass';
+  const runMode: JobRunMode = specs.run_mode === 'CONTINUOUS_MONITORING' ? RUN_MODE.CONTINUOUS : RUN_MODE.SINGLEPASS;
 
   // Map port_order to UI format
   const portOrder: JobPortOrder = specs.port_order?.toLowerCase() === 'random' ? 'random' : 'sequential';
@@ -452,7 +453,7 @@ export function normalizeJobStatusResponse(response: GetJobStatusResponse): Job 
 
     return {
       ...baseJob,
-      status: 'running',
+      status: JOB_STATUS.RUNNING,
       workerCount: workers.length,
       workers
     } as Job;
@@ -522,7 +523,7 @@ export function normalizeJobStatusResponse(response: GetJobStatusResponse): Job 
 
     return {
       ...baseJob,
-      status: 'completed',
+      status: JOB_STATUS.COMPLETED,
       completedAt: new Date().toISOString(),
       workerCount: workers.length,
       workers,
@@ -572,8 +573,8 @@ function createJobInputToLaunchRequest(input: CreateJobInput): LaunchTestRequest
     distribution_strategy: input.distribution === 'mirror' ? 'MIRROR' : 'SLICE',
     port_order: 'SEQUENTIAL',
     excluded_features: excludedFeatures?.length ? excludedFeatures : undefined,
-    run_mode: input.duration === 'continuous' ? 'CONTINUOUS_MONITORING' : 'SINGLEPASS',
-    monitor_interval: input.duration === 'continuous' ? input.monitorInterval : undefined,
+    run_mode: input.duration === DURATION.CONTINUOUS ? 'CONTINUOUS_MONITORING' : 'SINGLEPASS',
+    monitor_interval: input.duration === DURATION.CONTINUOUS ? input.monitorInterval : undefined,
     scan_min_delay: input.scanDelay?.minSeconds,
     scan_max_delay: input.scanDelay?.maxSeconds,
     task_name: input.name || undefined,

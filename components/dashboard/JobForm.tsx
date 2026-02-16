@@ -9,6 +9,7 @@ import Card from '@/components/ui/Card';
 import { useAuth } from '@/components/auth/AuthContext';
 import { useAppConfig } from '@/components/layout/AppConfigContext';
 import type { Job, JobDistribution, JobDuration } from '@/lib/api/types';
+import { DURATION } from '@/lib/api/constants';
 
 // Dynamically import map component to avoid SSR issues
 const NodeMapSelector = dynamic(
@@ -58,7 +59,7 @@ export default function JobForm({ onCreated }: JobFormProps): JSX.Element {
   const [workerCount, setWorkerCount] = useState(2);
   const [priority, setPriority] = useState('medium');
   const [distribution, setDistribution] = useState<JobDistribution>('slice');
-  const [duration, setDuration] = useState<JobDuration>('continuous');
+  const [duration, setDuration] = useState<JobDuration>(DURATION.CONTINUOUS);
   const [tempoMin, setTempoMin] = useState<string>('0.05');
   const [tempoMax, setTempoMax] = useState<string>('0.15');
   const [tempoEnabled, setTempoEnabled] = useState<boolean>(true);
@@ -145,7 +146,7 @@ export default function JobForm({ onCreated }: JobFormProps): JSX.Element {
       distribution,
       duration,
       scanDelay: scanDelayPayload,
-      monitorInterval: duration === 'continuous' && monitorInterval ? Number(monitorInterval) : undefined,
+      monitorInterval: duration === DURATION.CONTINUOUS && monitorInterval ? Number(monitorInterval) : undefined,
       selectedPeers: selectedPeers.length > 0 ? selectedPeers : undefined
     };
 
@@ -184,7 +185,7 @@ export default function JobForm({ onCreated }: JobFormProps): JSX.Element {
       setWorkerCount(2);
       setPriority('medium');
       setDistribution('slice');
-      setDuration('continuous');
+      setDuration(DURATION.CONTINUOUS);
       setTempoMin('0.05');
       setTempoMax('0.15');
       setTempoEnabled(true);
@@ -478,9 +479,9 @@ export default function JobForm({ onCreated }: JobFormProps): JSX.Element {
             </button>
             <button
               type="button"
-              onClick={() => setDuration('continuous')}
+              onClick={() => setDuration(DURATION.CONTINUOUS)}
               className={`flex flex-col items-start rounded-xl border px-4 py-3 text-left text-sm transition ${
-                duration === 'continuous'
+                duration === DURATION.CONTINUOUS
                   ? 'border-brand-primary/60 bg-brand-primary/15 text-slate-100'
                   : 'border-white/10 bg-slate-900/40 text-slate-200 hover:border-brand-primary/40'
               }`}
@@ -491,7 +492,7 @@ export default function JobForm({ onCreated }: JobFormProps): JSX.Element {
               </span>
             </button>
           </div>
-          {duration === 'continuous' && (
+          {duration === DURATION.CONTINUOUS && (
             <div className="mt-3 space-y-2">
               <label htmlFor="monitor-interval" className="block text-sm font-medium text-slate-200">
                 Monitor interval (seconds)

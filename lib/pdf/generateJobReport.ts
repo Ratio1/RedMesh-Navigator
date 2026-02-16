@@ -1,6 +1,7 @@
 import jsPDF from 'jspdf';
 import { format } from 'date-fns';
 import type { Job, WorkerReport, LlmAnalysis } from '@/lib/api/types';
+import { RUN_MODE, JOB_STATUS } from '@/lib/api/constants';
 import type { AggregatedPortsData, WorkerActivityItem } from '@/app/dashboard/jobs/[jobId]/types';
 
 type RGB = [number, number, number];
@@ -402,10 +403,10 @@ export function generateJobReport({
   doc.text('Status:', margin + 5, y);
   y += 4;
 
-  const statusColor = job.status === 'completed' ? colors.primary :
-                      job.status === 'stopped' ? colors.primary :
-                      job.status === 'stopping' ? colors.warning :
-                      job.status === 'running' ? colors.warning : colors.secondary;
+  const statusColor = job.status === JOB_STATUS.COMPLETED ? colors.primary :
+                      job.status === JOB_STATUS.STOPPED ? colors.primary :
+                      job.status === JOB_STATUS.STOPPING ? colors.warning :
+                      job.status === JOB_STATUS.RUNNING ? colors.warning : colors.secondary;
   doc.setFillColor(...statusColor);
   doc.roundedRect(margin + 5, y, 50, 8, 2, 2, 'F');
   doc.setTextColor(255, 255, 255);
@@ -482,7 +483,7 @@ export function generateJobReport({
   }
 
   // AI Security Analysis for singlepass jobs (show at top level)
-  if (job.runMode === 'singlepass' && llmAnalyses && llmAnalyses[1]) {
+  if (job.runMode === RUN_MODE.SINGLEPASS && llmAnalyses && llmAnalyses[1]) {
     doc.addPage();
     y = 20;
     renderLlmAnalysis(llmAnalyses[1]);
@@ -490,7 +491,7 @@ export function generateJobReport({
 
   // Configuration Section
   addHeader('Scan Configuration', 11);
-  addLabelValue('Run Mode', job.runMode === 'continuous' ? 'Continuous Monitoring' : 'Single Pass');
+  addLabelValue('Run Mode', job.runMode === RUN_MODE.CONTINUOUS ? 'Continuous Monitoring' : 'Single Pass');
   addLabelValue('Distribution', (job.distribution ?? 'slice').toUpperCase());
   addLabelValue('Port Order', (job.portOrder ?? 'sequential').toUpperCase());
   addLabelValue('Port Range', `${job.portRange?.start ?? 1} - ${job.portRange?.end ?? 65535}`);
