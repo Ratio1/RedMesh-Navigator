@@ -132,14 +132,6 @@ export function WorkerReportsHistory({ job, reports, llmAnalyses }: WorkerReport
 
                       {report ? (
                         <div className={`mt-3 space-y-3 ${!isExpanded ? 'hidden' : ''}`}>
-                          {/* Worker ID and Target */}
-                          <div className="text-xs">
-                            <span className="text-slate-400">Worker ID:</span>{' '}
-                            <span className="text-slate-200">
-                              {report.localWorkerId}
-                            </span>
-                          </div>
-
                           {/* Stats Grid */}
                           <div className="grid grid-cols-2 gap-2 text-xs">
                             <div>

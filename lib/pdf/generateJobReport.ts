@@ -424,7 +424,7 @@ export function generateJobReport({
   const reportsList = Object.values(reports);
   const totalOpenPorts = aggregatedPorts.ports.length;
   const totalPortsScanned = reportsList.reduce((sum, r) => sum + r.portsScanned, 0);
-  const workersWithDetails = job.workers.filter(w => Object.keys(w.serviceInfo).length > 0 || Object.keys(w.webTestsInfo).length > 0);
+  const reportsWithDetails = Object.entries(reports).filter(([, r]) => Object.keys(r.serviceInfo).length > 0 || Object.keys(r.webTestsInfo).length > 0);
   const workersWithFindings = reportsList.filter(r => r.openPorts.length > 0 || Object.keys(r.serviceInfo).length > 0).length;
 
   const stats = [
@@ -612,28 +612,42 @@ export function generateJobReport({
     y += 3;
   }
 
+  // Build CID → nodeAddress lookup from passHistory
+  const cidToNodeAddress = new Map<string, string>();
+  if (job.passHistory) {
+    for (const pass of job.passHistory) {
+      for (const [nodeAddr, cid] of Object.entries(pass.reports)) {
+        cidToNodeAddress.set(cid, nodeAddr);
+      }
+    }
+  }
+
+  const truncateAddress = (addr: string) =>
+    addr.length > 20 ? `${addr.slice(0, 8)}...${addr.slice(-8)}` : addr;
+
   // Worker Assignments
-  if (job.workers.length > 0) {
-    addHeader(`Worker Assignments (${job.workers.length})`, 11);
-    job.workers.forEach((worker) => {
+  const reportEntries = Object.entries(reports);
+  if (reportEntries.length > 0) {
+    addHeader(`Worker Assignments (${reportEntries.length})`, 11);
+    reportEntries.forEach(([cid, report]) => {
       checkPageBreak(8);
       doc.setFontSize(8);
       doc.setFont('Helvetica', 'bold');
       doc.setTextColor(...colors.secondary);
-      const displayId = worker.id.length > 50 ? worker.id.slice(0, 25) + '...' + worker.id.slice(-20) : worker.id;
-      doc.text(displayId, margin, y);
+      const nodeAddress = cidToNodeAddress.get(cid) ?? cid;
+      doc.text(truncateAddress(nodeAddress), margin, y);
       y += 4;
       doc.setFont('Helvetica', 'normal');
       doc.setTextColor(...colors.text);
-      const workerStatus = worker.done ? 'Done' : worker.canceled ? 'Canceled' : 'In Progress';
-      doc.text(`Ports ${worker.startPort}-${worker.endPort} | Status: ${workerStatus}`, margin + 5, y);
+      const workerStatus = report.done ? 'Done' : report.canceled ? 'Canceled' : 'In Progress';
+      doc.text(`Ports ${report.startPort}-${report.endPort} | Status: ${workerStatus}`, margin + 5, y);
       y += 5;
     });
     y += 3;
   }
 
   // === PAGE 2: FINDINGS ===
-  const hasFindings = totalOpenPorts > 0 || job.aggregate || workersWithDetails.length > 0;
+  const hasFindings = totalOpenPorts > 0 || job.aggregate || reportsWithDetails.length > 0;
   if (hasFindings) {
     doc.addPage();
     y = 20;
@@ -644,10 +658,7 @@ export function generateJobReport({
     addHeader('Discovered Open Ports', 14, colors.primary);
     y += 2;
 
-    const allPorts = new Set<number>();
-    job.workers.forEach(w => w.openPorts.forEach(p => allPorts.add(p)));
-    aggregatedPorts.ports.forEach(p => allPorts.add(p));
-    const sortedPorts = Array.from(allPorts).sort((a, b) => a - b);
+    const sortedPorts = [...aggregatedPorts.ports].sort((a, b) => a - b);
 
     doc.setFillColor(254, 226, 226);
     doc.roundedRect(margin, y, contentWidth, 15, 2, 2, 'F');
@@ -691,12 +702,14 @@ export function generateJobReport({
   }
 
   // === DETAILED WORKER REPORTS ===
-  if (workersWithDetails.length > 0) {
+  if (reportsWithDetails.length > 0) {
     addHeader('Detailed Worker Reports', 14, colors.primary);
     y += 5;
 
-    workersWithDetails.forEach((worker, idx) => {
+    reportsWithDetails.forEach(([cid, report], idx) => {
       checkPageBreak(50);
+
+      const nodeAddress = cidToNodeAddress.get(cid) ?? cid;
 
       // Worker header
       doc.setFillColor(...colors.light);
@@ -706,27 +719,27 @@ export function generateJobReport({
       doc.setFontSize(11);
       doc.setFont('Helvetica', 'bold');
       doc.setTextColor(...colors.text);
-      doc.text(`Worker: ${worker.id}`, margin + 5, y);
+      doc.text(`Node: ${truncateAddress(nodeAddress)}`, margin + 5, y);
 
       // Status badge
-      const workerStatusColor = worker.done ? colors.primary : worker.canceled ? colors.danger : colors.warning;
+      const workerStatusColor = report.done ? colors.primary : report.canceled ? colors.danger : colors.warning;
       doc.setFillColor(...workerStatusColor);
       doc.roundedRect(pageWidth - margin - 35, y - 4, 30, 7, 2, 2, 'F');
       doc.setTextColor(255, 255, 255);
       doc.setFontSize(7);
-      doc.text(worker.done ? 'DONE' : worker.canceled ? 'CANCELED' : 'RUNNING', pageWidth - margin - 32, y);
+      doc.text(report.done ? 'DONE' : report.canceled ? 'CANCELED' : 'RUNNING', pageWidth - margin - 32, y);
 
       y += 6;
       doc.setFontSize(8);
       doc.setTextColor(...colors.muted);
-      doc.text(`Ports ${worker.startPort}-${worker.endPort} | ${worker.portsScanned} scanned | ${worker.openPorts.length} open`, margin + 5, y);
+      doc.text(`Ports ${report.startPort}-${report.endPort} | ${report.portsScanned} scanned | ${report.openPorts.length} open`, margin + 5, y);
       y += 10;
 
       // Service Info
-      if (Object.keys(worker.serviceInfo).length > 0) {
+      if (Object.keys(report.serviceInfo).length > 0) {
         addHeader('Service Detection Results', 10, colors.primary);
 
-        Object.entries(worker.serviceInfo).forEach(([port, probes]) => {
+        Object.entries(report.serviceInfo).forEach(([port, probes]) => {
           checkPageBreak(20);
 
           doc.setFontSize(9);
@@ -768,10 +781,10 @@ export function generateJobReport({
       }
 
       // Web Tests Info
-      if (Object.keys(worker.webTestsInfo).length > 0) {
+      if (Object.keys(report.webTestsInfo).length > 0) {
         addHeader('Web Security Tests', 10, [59, 130, 246]);
 
-        Object.entries(worker.webTestsInfo).forEach(([port, tests]) => {
+        Object.entries(report.webTestsInfo).forEach(([port, tests]) => {
           checkPageBreak(20);
 
           doc.setFontSize(9);
@@ -813,15 +826,15 @@ export function generateJobReport({
       }
 
       // Completed tests summary
-      if (worker.completedTests && worker.completedTests.length > 0) {
+      if (report.completedTests && report.completedTests.length > 0) {
         checkPageBreak(15);
         doc.setFontSize(8);
         doc.setFont('Helvetica', 'bold');
         doc.setTextColor(...colors.muted);
-        doc.text(`Completed Tests (${worker.completedTests.length}):`, margin + 5, y);
+        doc.text(`Completed Tests (${report.completedTests.length}):`, margin + 5, y);
         y += 4;
         doc.setFont('Helvetica', 'normal');
-        const testsText = worker.completedTests.map(t => t.replace(/^_/, '')).join(', ');
+        const testsText = report.completedTests.map(t => t.replace(/^_/, '')).join(', ');
         const wrappedTests = doc.splitTextToSize(testsText, contentWidth - 10);
         wrappedTests.forEach((line: string) => {
           checkPageBreak(4);
@@ -832,7 +845,7 @@ export function generateJobReport({
 
       y += 10;
 
-      if (idx < workersWithDetails.length - 1) {
+      if (idx < reportsWithDetails.length - 1) {
         addDivider();
       }
     });
