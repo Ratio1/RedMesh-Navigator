@@ -55,7 +55,9 @@ export interface JobTimelineEntry {
 
 export interface PassHistoryEntry {
   passNr: number;
+  startedAt?: string;
   completedAt: string;
+  duration?: number; // seconds
   reports: Record<string, string>; // node_address -> CID mapping
   llmAnalysisCid?: string; // CID for LLM analysis report (present for completed passes)
 }
@@ -135,6 +137,7 @@ export interface Job {
   tempo?: JobTempo;
   tempoSteps?: JobTempoSteps;
   passHistory?: PassHistoryEntry[];
+  totalDuration?: number; // overall job duration in seconds
 }
 
 export interface CreateJobInput {

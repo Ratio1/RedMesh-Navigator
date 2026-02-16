@@ -18,6 +18,17 @@ function formatDate(value?: string): string {
   }
 }
 
+function formatDuration(seconds?: number): string {
+  if (seconds == null || seconds < 0) return '';
+  if (seconds < 60) return `${Math.round(seconds)}s`;
+  const m = Math.floor(seconds / 60);
+  const s = Math.round(seconds % 60);
+  if (m < 60) return s > 0 ? `${m}m ${s}s` : `${m}m`;
+  const h = Math.floor(m / 60);
+  const rm = m % 60;
+  return rm > 0 ? `${h}h ${rm}m` : `${h}h`;
+}
+
 interface WorkerReportsHistoryProps {
   job: Job;
   reports: Record<string, WorkerReport>;
@@ -84,6 +95,9 @@ export function WorkerReportsHistory({ job, reports, llmAnalyses }: WorkerReport
                 </h4>
                 <span className="text-xs text-slate-400">
                   Completed: {formatDate(pass.completedAt)}
+                  {pass.duration != null && (
+                    <span className="ml-2 text-emerald-400">({formatDuration(pass.duration)})</span>
+                  )}
                 </span>
               </div>
               {/* LLM Analysis for this pass (continuous mode) */}

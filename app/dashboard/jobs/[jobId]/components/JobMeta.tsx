@@ -20,6 +20,17 @@ function formatDate(value?: string): string {
   }
 }
 
+function formatDuration(seconds?: number): string {
+  if (seconds == null || seconds < 0) return '--';
+  if (seconds < 60) return `${Math.round(seconds)}s`;
+  const m = Math.floor(seconds / 60);
+  const s = Math.round(seconds % 60);
+  if (m < 60) return s > 0 ? `${m}m ${s}s` : `${m}m`;
+  const h = Math.floor(m / 60);
+  const rm = m % 60;
+  return rm > 0 ? `${h}h ${rm}m` : `${h}h`;
+}
+
 interface JobMetaProps {
   job: Job;
   workerActivity: WorkerActivityItem[];
@@ -69,6 +80,12 @@ export function JobMeta({ job, workerActivity }: JobMetaProps) {
           <div className="flex items-center justify-between">
             <dt>Finalized</dt>
             <dd className="text-slate-100">{formatDate(job.finalizedAt)}</dd>
+          </div>
+        )}
+        {job.totalDuration != null && (
+          <div className="flex items-center justify-between">
+            <dt>Duration</dt>
+            <dd className="font-semibold text-emerald-400">{formatDuration(job.totalDuration)}</dd>
           </div>
         )}
         <div className="flex items-center justify-between">

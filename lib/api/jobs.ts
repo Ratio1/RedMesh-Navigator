@@ -342,13 +342,22 @@ function normalizeJobFromSpecs(specs: JobSpecs): Job {
   // Map port_order to UI format
   const portOrder: JobPortOrder = specs.port_order?.toLowerCase() === 'random' ? 'random' : 'sequential';
 
-  // Normalize pass_history to UI format
-  const passHistory: PassHistoryEntry[] | undefined = specs.pass_history?.map((entry) => ({
-    passNr: entry.pass_nr,
-    completedAt: new Date(entry.completed_at * 1000).toISOString(),
-    reports: entry.reports,
-    llmAnalysisCid: entry.llm_analysis_cid
-  }));
+  // Normalize pass_history to UI format (support both legacy completed_at and new date_completed)
+  const passHistory: PassHistoryEntry[] | undefined = specs.pass_history?.map((entry) => {
+    const completedTs = entry.date_completed ?? entry.completed_at;
+    return {
+      passNr: entry.pass_nr,
+      startedAt: entry.date_started
+        ? new Date(entry.date_started * 1000).toISOString()
+        : undefined,
+      completedAt: completedTs
+        ? new Date(completedTs * 1000).toISOString()
+        : new Date().toISOString(),
+      duration: entry.duration ?? undefined,
+      reports: entry.reports,
+      llmAnalysisCid: entry.llm_analysis_cid
+    };
+  });
 
   // Next pass at (for continuous monitoring)
   const nextPassAt = specs.next_pass_at
@@ -393,7 +402,8 @@ function normalizeJobFromSpecs(specs: JobSpecs): Job {
       ? { minSeconds: specs.scan_min_delay, maxSeconds: specs.scan_max_delay }
       : undefined,
     tempoSteps: undefined,
-    passHistory
+    passHistory,
+    totalDuration: specs.duration ?? undefined
   };
 }
 
