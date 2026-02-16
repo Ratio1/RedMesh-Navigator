@@ -77,6 +77,8 @@ export interface JobSpecs {
   scan_max_delay: number;
   task_name?: string;
   task_description?: string;
+  duration?: number;
+  pass_date_started?: number;
 }
 
 // Launch Test Response
@@ -220,7 +222,10 @@ export interface StopMonitoringRequest {
 // Note: API returns pass_nr and reports mapping (node_address -> CID)
 export interface PassHistoryEntry {
   pass_nr: number;
-  completed_at: number;
+  date_started?: number;
+  date_completed?: number;
+  completed_at?: number; // legacy field name
+  duration?: number;
   reports: Record<string, string>; // node_address -> CID mapping
   llm_analysis_cid?: string; // CID for LLM analysis (present for completed passes)
 }
