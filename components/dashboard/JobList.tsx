@@ -3,6 +3,7 @@
 import { ReactNode, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Job } from '@/lib/api/types';
+import { RUN_MODE } from '@/lib/api/constants';
 import Card from '@/components/ui/Card';
 import Badge from '@/components/ui/Badge';
 import Button from '@/components/ui/Button';
@@ -138,12 +139,12 @@ export default function JobList({
                 <h3 className="text-lg font-semibold text-slate-100">{job.displayName}</h3>
                 <StatusBadge status={job.status} />
                 <Badge
-                  tone={job.runMode === 'continuous' ? 'warning' : 'neutral'}
-                  label={job.runMode === 'continuous' ? 'Continuous' : 'Single Pass'}
+                  tone={job.runMode === RUN_MODE.CONTINUOUS ? 'warning' : 'neutral'}
+                  label={job.runMode === RUN_MODE.CONTINUOUS ? 'Continuous' : 'Single Pass'}
                 />
                 <Badge tone="neutral" label={`Priority: ${job.priority}`} />
                 <Badge tone="neutral" label={`Workers: ${job.workerCount}`} />
-                {job.runMode === 'continuous' && job.currentPass > 1 && (
+                {job.runMode === RUN_MODE.CONTINUOUS && job.currentPass > 1 && (
                   <Badge tone="success" label={`Pass #${job.currentPass}`} />
                 )}
               </div>

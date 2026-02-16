@@ -6,6 +6,7 @@ import Card from '@/components/ui/Card';
 import Badge from '@/components/ui/Badge';
 import CopyableText from '@/components/ui/CopyableText';
 import type { Job } from '@/lib/api/types';
+import { RUN_MODE } from '@/lib/api/constants';
 import type { WorkerActivityItem } from '../types';
 
 const DEFAULT_PORT_START = 1;
@@ -92,8 +93,8 @@ export function JobMeta({ job, workerActivity }: JobMetaProps) {
           <dt>Run Mode</dt>
           <dd>
             <Badge
-              tone={job.runMode === 'continuous' ? 'warning' : 'success'}
-              label={job.runMode === 'continuous' ? 'Continuous' : 'Single Pass'}
+              tone={job.runMode === RUN_MODE.CONTINUOUS ? 'warning' : 'success'}
+              label={job.runMode === RUN_MODE.CONTINUOUS ? 'Continuous' : 'Single Pass'}
             />
           </dd>
         </div>
