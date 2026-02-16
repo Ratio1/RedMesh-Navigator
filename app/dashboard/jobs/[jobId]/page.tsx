@@ -12,7 +12,7 @@ import Button from '@/components/ui/Button';
 import Loader from '@/components/ui/Loader';
 
 // Local hooks
-import { useAggregatedPorts, useWorkerActivity, useMergedWorkers } from './hooks';
+import { useAggregatedPorts, useWorkerActivity } from './hooks';
 
 // Local components
 import {
@@ -43,7 +43,6 @@ export default function JobDetailsPage(): JSX.Element {
   // Derived data
   const aggregatedPorts = useAggregatedPorts(reports, job);
   const workerActivity = useWorkerActivity(reports);
-  const mergedWorkers = useMergedWorkers(job, reports);
 
   // Event handlers
   const handleStopJob = async () => {
@@ -187,7 +186,7 @@ export default function JobDetailsPage(): JSX.Element {
           <JobTimeline timeline={job.timeline} />
         </section>
 
-        <DetailedWorkerReports mergedWorkers={mergedWorkers} />
+        <DetailedWorkerReports reports={reports} job={job} />
 
         <WorkerReportsHistory job={job} reports={reports} llmAnalyses={llmAnalyses} />
 

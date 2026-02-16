@@ -1,4 +1,4 @@
-import type { Job, WorkerReport, JobWorkerStatus } from '@/lib/api/types';
+import type { Job, WorkerReport } from '@/lib/api/types';
 
 export interface AggregatedPortsData {
   ports: number[];
@@ -22,5 +22,4 @@ export interface JobDetailContext {
   reports: Record<string, WorkerReport>;
   aggregatedPorts: AggregatedPortsData;
   workerActivity: WorkerActivityItem[];
-  mergedWorkers: JobWorkerStatus[];
 }
