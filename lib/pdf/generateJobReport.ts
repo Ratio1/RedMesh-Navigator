@@ -2,6 +2,7 @@ import jsPDF from 'jspdf';
 import { format } from 'date-fns';
 import type { Job, WorkerReport, LlmAnalysis } from '@/lib/api/types';
 import { RUN_MODE, JOB_STATUS } from '@/lib/api/constants';
+import { probeResultToString, normalizeProbeResult } from '@/lib/utils/probeResult';
 import type { AggregatedPortsData, WorkerActivityItem } from '@/app/dashboard/jobs/[jobId]/types';
 
 type RGB = [number, number, number];
@@ -767,9 +768,10 @@ export function generateJobReport({
             if (result === null || result === undefined) return;
 
             checkPageBreak(8);
-            const resultStr = String(result);
-            const isVulnerability = resultStr.includes('VULNERABILITY');
-            const isError = resultStr.includes('failed') || resultStr.includes('timed out');
+            const normalized = normalizeProbeResult(result);
+            const resultStr = normalized.lines.join('\n');
+            const isVulnerability = normalized.hasVulnerability;
+            const isError = normalized.hasError;
 
             doc.setFontSize(8);
             doc.setFont('Helvetica', 'bold');
@@ -812,9 +814,10 @@ export function generateJobReport({
             if (result === null || result === undefined) return;
 
             checkPageBreak(8);
-            const resultStr = String(result);
-            const isError = resultStr.startsWith('ERROR:');
-            const isVulnerable = resultStr.includes('VULNERABLE') || resultStr.includes('vulnerability');
+            const normalized = normalizeProbeResult(result);
+            const resultStr = normalized.lines.join('\n');
+            const isError = normalized.hasError;
+            const isVulnerable = normalized.hasVulnerability;
 
             doc.setFontSize(8);
             doc.setFont('Helvetica', 'bold');
