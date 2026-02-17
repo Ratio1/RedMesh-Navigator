@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import Card from '@/components/ui/Card';
 import Button from '@/components/ui/Button';
+import { normalizeProbeResult } from '@/lib/utils/probeResult';
 import type { AggregatedPortsData } from '../types';
 
 interface DiscoveredPortsProps {
@@ -92,36 +93,51 @@ export function DiscoveredPorts({ aggregatedPorts }: DiscoveredPortsProps) {
                     <div className="space-y-2">
                       {Object.entries(aggregatedPorts.services.get(selectedPort) as Record<string, unknown>).map(([probeName, result]) => {
                         if (result === null || result === undefined) return null;
-                        const resultStr = String(result);
-                        const isVulnerability = resultStr.includes('VULNERABILITY');
-                        const isError = resultStr.includes('failed') || resultStr.includes('timed out');
+                        const normalized = normalizeProbeResult(result);
+                        if (normalized.lines.length === 0) return null;
                         const resultKey = `service-${selectedPort}-${probeName}`;
                         const isExpanded = expandedResults.has(resultKey);
-                        const shouldTruncate = resultStr.length > 200;
+                        const maxCollapsedLines = 4;
+                        const shouldTruncate = normalized.lines.length > maxCollapsedLines;
+                        const visibleLines = shouldTruncate && !isExpanded
+                          ? normalized.lines.slice(0, maxCollapsedLines)
+                          : normalized.lines;
 
                         return (
                           <div
                             key={probeName}
                             className={`rounded px-3 py-2 text-sm ${
-                              isVulnerability
+                              normalized.hasVulnerability
                                 ? 'bg-amber-900/30 border border-amber-500/30'
-                                : isError
+                                : normalized.hasError
                                 ? 'bg-slate-800/50 border border-white/5'
                                 : 'bg-slate-900/50 border border-white/5'
                             }`}
                           >
                             <span className={`font-medium ${
-                              isVulnerability ? 'text-amber-300' : isError ? 'text-slate-500' : 'text-slate-300'
+                              normalized.hasVulnerability ? 'text-amber-300' : normalized.hasError ? 'text-slate-500' : 'text-slate-300'
                             }`}>
                               {probeName.replace(/^_service_info_/, '')}:
-                            </span>{' '}
-                            <span className={`${
-                              isVulnerability ? 'text-amber-200' : isError ? 'text-slate-500' : 'text-slate-400'
-                            }`}>
-                              {shouldTruncate && !isExpanded
-                                ? resultStr.slice(0, 200) + '...'
-                                : resultStr}
                             </span>
+                            <div className="mt-1 space-y-0.5">
+                              {visibleLines.map((line, i) => {
+                                const isVuln = line.includes('VULNERABILITY');
+                                return (
+                                  <div
+                                    key={i}
+                                    className={
+                                      isVuln
+                                        ? 'text-amber-300 font-medium'
+                                        : normalized.hasError
+                                        ? 'text-slate-500'
+                                        : 'text-slate-400'
+                                    }
+                                  >
+                                    {line}
+                                  </div>
+                                );
+                              })}
+                            </div>
                             {shouldTruncate && (
                               <button
                                 onClick={() => {
@@ -133,9 +149,9 @@ export function DiscoveredPorts({ aggregatedPorts }: DiscoveredPortsProps) {
                                   }
                                   setExpandedResults(newSet);
                                 }}
-                                className="ml-2 text-xs text-brand-primary hover:underline"
+                                className="mt-1 text-xs text-brand-primary hover:underline cursor-pointer"
                               >
-                                {isExpanded ? 'Show less' : 'Show more'}
+                                {isExpanded ? 'Show less' : `+${normalized.lines.length - maxCollapsedLines} more lines`}
                               </button>
                             )}
                           </div>
@@ -154,36 +170,51 @@ export function DiscoveredPorts({ aggregatedPorts }: DiscoveredPortsProps) {
                     <div className="space-y-2">
                       {Object.entries(aggregatedPorts.webTests.get(selectedPort) as Record<string, unknown>).map(([testName, result]) => {
                         if (result === null || result === undefined) return null;
-                        const resultStr = String(result);
-                        const isError = resultStr.startsWith('ERROR:');
-                        const isVulnerable = resultStr.includes('VULNERABLE') || resultStr.includes('vulnerability');
+                        const normalized = normalizeProbeResult(result);
+                        if (normalized.lines.length === 0) return null;
                         const resultKey = `web-${selectedPort}-${testName}`;
                         const isExpanded = expandedResults.has(resultKey);
-                        const shouldTruncate = resultStr.length > 200;
+                        const maxCollapsedLines = 4;
+                        const shouldTruncate = normalized.lines.length > maxCollapsedLines;
+                        const visibleLines = shouldTruncate && !isExpanded
+                          ? normalized.lines.slice(0, maxCollapsedLines)
+                          : normalized.lines;
 
                         return (
                           <div
                             key={testName}
                             className={`rounded px-3 py-2 text-sm ${
-                              isVulnerable
+                              normalized.hasVulnerability
                                 ? 'bg-rose-900/30 border border-rose-500/30'
-                                : isError
+                                : normalized.hasError
                                 ? 'bg-slate-800/50 border border-white/5'
                                 : 'bg-slate-900/50 border border-white/5'
                             }`}
                           >
                             <span className={`font-medium ${
-                              isVulnerable ? 'text-rose-300' : isError ? 'text-slate-500' : 'text-slate-300'
+                              normalized.hasVulnerability ? 'text-rose-300' : normalized.hasError ? 'text-slate-500' : 'text-slate-300'
                             }`}>
                               {testName.replace(/^_web_test_/, '')}:
-                            </span>{' '}
-                            <span className={`${
-                              isVulnerable ? 'text-rose-200' : isError ? 'text-slate-500' : 'text-slate-400'
-                            }`}>
-                              {shouldTruncate && !isExpanded
-                                ? resultStr.slice(0, 200) + '...'
-                                : resultStr}
                             </span>
+                            <div className="mt-1 space-y-0.5">
+                              {visibleLines.map((line, i) => {
+                                const isVuln = line.includes('VULNERABILITY');
+                                return (
+                                  <div
+                                    key={i}
+                                    className={
+                                      isVuln
+                                        ? 'text-rose-300 font-medium'
+                                        : normalized.hasError
+                                        ? 'text-slate-500'
+                                        : 'text-slate-400'
+                                    }
+                                  >
+                                    {line}
+                                  </div>
+                                );
+                              })}
+                            </div>
                             {shouldTruncate && (
                               <button
                                 onClick={() => {
@@ -195,9 +226,9 @@ export function DiscoveredPorts({ aggregatedPorts }: DiscoveredPortsProps) {
                                   }
                                   setExpandedResults(newSet);
                                 }}
-                                className="ml-2 text-xs text-brand-primary hover:underline"
+                                className="mt-1 text-xs text-brand-primary hover:underline cursor-pointer"
                               >
-                                {isExpanded ? 'Show less' : 'Show more'}
+                                {isExpanded ? 'Show less' : `+${normalized.lines.length - maxCollapsedLines} more lines`}
                               </button>
                             )}
                           </div>
