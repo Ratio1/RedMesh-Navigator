@@ -12,7 +12,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  VERSION_FILE: lib/config/version.ts
+  VERSION_FILE: package.json
 
 jobs:
   release:
@@ -98,21 +98,18 @@ jobs:
         run: |
           set -euo pipefail
           python - <<'PY'
-          import os, re
+          import json, os
           from pathlib import Path
 
           path = Path(os.environ["VERSION_FILE"])
           new_tag = os.environ["NEW_TAG"]
+          # Strip leading 'v' for package.json (uses bare semver)
+          version = new_tag.lstrip("v")
 
-          text = path.read_text(encoding="utf-8")
-
-          # Replace the first quoted semver occurrence (supports '1.2.3' or 'v1.2.3')
-          pattern = re.compile(r"(['\"])v?\d+\.\d+\.\d+(['\"])")
-          out, n = pattern.subn(rf"\1{new_tag}\2", text, count=1)
-          if n == 0:
-            raise SystemExit(f"No quoted semver found in {path}")
-          path.write_text(out, encoding="utf-8")
-          print(f"Updated {path} -> {new_tag}")
+          data = json.loads(path.read_text(encoding="utf-8"))
+          data["version"] = version
+          path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+          print(f"Updated {path} -> {version}")
           PY
 
       - name: Commit + tag + push
