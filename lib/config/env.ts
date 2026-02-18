@@ -1,3 +1,5 @@
+import { privateKeyToAccount } from 'viem/accounts';
+
 export interface AppRuntimeConfig {
   redmeshApiUrl?: string;
   oraclesApiUrl?: string;
@@ -7,6 +9,8 @@ export interface AppRuntimeConfig {
   hostId?: string;
   hostAddr?: string;
   hostEthAddr?: string;
+  evmRpcUrl?: string;
+  tenantWalletAddress?: string;
   mockMode: boolean;
   environment: 'development' | 'production' | 'test';
   redmeshPassword?: string;
@@ -33,6 +37,73 @@ function normalizeUrl(value?: string | null): string | undefined {
   }
 
   return `http://${trimmed.replace(/\/$/, '')}`;
+}
+
+function normalizeRpcUrl(value?: string | null): string | undefined {
+  if (!value) {
+    return undefined;
+  }
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+  if (/^https?:\/\//i.test(trimmed)) {
+    return trimmed.replace(/\/$/, '');
+  }
+  return undefined;
+}
+
+function resolveEvmRpcUrl(): string | undefined {
+  const explicit = normalizeRpcUrl(
+    process.env.EE_DAUTH_RPC ??
+      process.env.DAUTH_RPC ??
+      process.env.EVM_RPC_URL ??
+      process.env.R1EN_EVM_RPC_URL
+  );
+  if (explicit) {
+    return explicit;
+  }
+
+  const network = (process.env.EE_DAUTH_NET ?? process.env.DAUTH_NET ?? '').trim().toLowerCase();
+  if (network === 'mainnet') {
+    return 'https://base-rpc.publicnode.com';
+  }
+  if (network === 'testnet' || network === 'devnet') {
+    return 'https://base-sepolia-rpc.publicnode.com';
+  }
+  return undefined;
+}
+
+function normalizeHexPrivateKey(value?: string | null): `0x${string}` | undefined {
+  if (!value) {
+    return undefined;
+  }
+  let normalized = value.trim();
+  if (!normalized) {
+    return undefined;
+  }
+  if (!normalized.startsWith('0x')) {
+    normalized = `0x${normalized}`;
+  }
+  if (!/^0x[0-9a-fA-F]{64}$/.test(normalized)) {
+    return undefined;
+  }
+  return normalized.toLowerCase() as `0x${string}`;
+}
+
+function resolveTenantWalletAddress(): string | undefined {
+  const tenantPkEnvName = (process.env.R1EN_POT_TENANT_PRIVATE_KEY_ENV ?? '').trim() || 'R1EN_POT_TENANT_PRIVATE_KEY';
+  const tenantPkRaw = process.env[tenantPkEnvName] ?? process.env.EE_POT_TENANT_PRIVATE_KEY;
+  const tenantPk = normalizeHexPrivateKey(tenantPkRaw);
+  if (!tenantPk) {
+    return undefined;
+  }
+  try {
+    return privateKeyToAccount(tenantPk).address;
+  } catch (error) {
+    console.warn('Unable to derive tenant wallet address from configured private key:', error);
+    return undefined;
+  }
 }
 
 function parsePeerList(raw?: string | null): string[] {
@@ -76,8 +147,6 @@ function buildRedmeshApiUrl(): string | undefined {
 }
 
 function resolveConfig(): AppRuntimeConfig {
-  console.log('Resolving application runtime configuration from environment variables.');
-  console.log(process.env)
   // Prefer edge host + port to build the RedMesh URL; allow legacy variables as fallbacks.
   const redmeshApiUrl = buildRedmeshApiUrl();
   const oraclesApiUrl = normalizeUrl(
@@ -92,6 +161,8 @@ function resolveConfig(): AppRuntimeConfig {
   const hostId = process.env.EE_HOST_ID?.trim();
   const hostAddr = process.env.EE_HOST_ADDR?.trim();
   const hostEthAddr = process.env.EE_HOST_ETH_ADDR?.trim();
+  const evmRpcUrl = resolveEvmRpcUrl();
+  const tenantWalletAddress = resolveTenantWalletAddress();
   const redmeshPassword = process.env.REDMESH_PASSWORD?.trim();
   const adminUsername = (process.env.ADMIN_USERNAME ?? 'admin').trim();
   const adminPassword = (process.env.ADMIN_PASSWORD ?? 'admin123').trim();
@@ -134,6 +205,8 @@ function resolveConfig(): AppRuntimeConfig {
     hostId,
     hostAddr,
     hostEthAddr,
+    evmRpcUrl,
+    tenantWalletAddress,
     mockMode: missingCritical,
     environment: (process.env.NODE_ENV as AppRuntimeConfig['environment']) || 'development',
     redmeshPassword,
@@ -166,7 +239,6 @@ export function resetAppConfigCache(): void {
 
 export function getSwaggerUrl(): string | undefined {
   const config = getAppConfig();
-  console.log(config)
   if (!config.redmeshApiUrl) {
     return undefined;
   }
