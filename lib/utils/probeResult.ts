@@ -64,8 +64,68 @@ export function normalizeProbeResult(result: unknown): NormalizedProbeResult {
       lines.push(`Accepted credentials: ${obj.accepted_credentials.join(', ')}`);
     }
 
+    // FTP-specific fields
+    if (obj.server_type) {
+      lines.push(`Server type: ${String(obj.server_type)}`);
+    }
+    if (Array.isArray(obj.features) && obj.features.length > 0) {
+      lines.push(`Features: ${obj.features.join(', ')}`);
+    }
+    if (obj.anonymous_access === true) {
+      lines.push('Anonymous access: Yes');
+    }
+    if (obj.write_access === true) {
+      lines.push('Write access: Yes');
+    }
+    if (typeof obj.tls_supported === 'boolean') {
+      lines.push(`TLS support: ${obj.tls_supported ? 'Yes' : 'No'}`);
+    }
+    if (Array.isArray(obj.directory_listing) && obj.directory_listing.length > 0) {
+      lines.push(`Directory listing (${obj.directory_listing.length} entries):`);
+      for (const entry of obj.directory_listing) {
+        lines.push(`  ${String(entry)}`);
+      }
+    }
+
+    // Telnet-specific fields
+    if (Array.isArray(obj.negotiation_options) && obj.negotiation_options.length > 0) {
+      lines.push(`Negotiation: ${obj.negotiation_options.join(', ')}`);
+    }
+    if (obj.system_info) {
+      lines.push(`System: ${String(obj.system_info)}`);
+    }
+
+    // SMTP-specific fields
+    if (obj.server_hostname) {
+      lines.push(`Server hostname: ${String(obj.server_hostname)}`);
+    }
+    if (obj.max_message_size) {
+      lines.push(`Max message size: ${String(obj.max_message_size)}`);
+    }
+    // (starttls / open_relay / vrfy / expn are captured via vulnerabilities list)
+
+    // HTTP-specific fields
+    if (obj.server) {
+      lines.push(`Server: ${String(obj.server)}`);
+    }
+    if (obj.title) {
+      lines.push(`Title: ${String(obj.title)}`);
+    }
+    if (Array.isArray(obj.technologies) && obj.technologies.length > 0) {
+      lines.push(`Technologies: ${obj.technologies.join(', ')}`);
+    }
+    if (Array.isArray(obj.dangerous_methods) && obj.dangerous_methods.length > 0) {
+      lines.push(`Dangerous methods: ${obj.dangerous_methods.join(', ')}`);
+    }
+
     // Catch any other string keys we haven't handled
-    const handled = new Set(['banner', 'auth_methods', 'vulnerabilities', 'accepted_credentials', 'error']);
+    const handled = new Set([
+      'banner', 'auth_methods', 'vulnerabilities', 'accepted_credentials', 'error',
+      'server_type', 'features', 'anonymous_access', 'write_access', 'tls_supported',
+      'directory_listing', 'negotiation_options', 'system_info',
+      'server_hostname', 'max_message_size', 'starttls', 'open_relay', 'vrfy_enabled', 'expn_enabled',
+      'server', 'title', 'technologies', 'dangerous_methods',
+    ]);
     for (const [key, val] of Object.entries(obj)) {
       if (!handled.has(key) && val !== null && val !== undefined) {
         const valStr = typeof val === 'object' ? JSON.stringify(val) : String(val);
