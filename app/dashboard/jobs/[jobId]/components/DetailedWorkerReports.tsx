@@ -3,7 +3,7 @@
 import { useState, useMemo } from 'react';
 import Card from '@/components/ui/Card';
 import Badge from '@/components/ui/Badge';
-import { normalizeProbeResult, severityLineClass } from '@/lib/utils/probeResult';
+import { ProbeResultBlock } from './ProbeResultBlock';
 import type { Job, WorkerReport } from '@/lib/api/types';
 
 interface DetailedWorkerReportsProps {
@@ -102,72 +102,27 @@ export function DetailedWorkerReports({ reports, job }: DetailedWorkerReportsPro
                           <p className="text-sm font-semibold text-brand-primary mb-2">Port {port}</p>
                           <div className="space-y-1">
                             {Object.entries(probes as Record<string, unknown>).map(([probeName, result]) => {
-                              if (result === null || result === undefined) return null;
-                              const normalized = normalizeProbeResult(result);
-                              if (normalized.lines.length === 0) return null;
                               const probeKey = `${cid}-service-${port}-${probeName}`;
-                              const isExpanded = expandedProbes.has(probeKey);
-                              const maxCollapsedLines = 4;
-                              const shouldTruncate = normalized.lines.length > maxCollapsedLines;
-                              const visibleLines = shouldTruncate && !isExpanded
-                                ? normalized.lines.slice(0, maxCollapsedLines)
-                                : normalized.lines;
-
                               return (
-                                <div
+                                <ProbeResultBlock
                                   key={probeName}
-                                  className={`text-xs rounded px-2 py-1.5 ${
-                                    normalized.hasVulnerability
-                                      ? 'bg-amber-900/30 border border-amber-500/30'
-                                      : normalized.hasError
-                                      ? 'bg-slate-800/50 text-slate-500'
-                                      : 'bg-slate-800/50'
-                                  }`}
-                                >
-                                  <span className={`font-medium ${
-                                    normalized.hasVulnerability ? 'text-amber-300' : normalized.hasError ? 'text-slate-500' : 'text-slate-300'
-                                  }`}>
-                                    {probeName.replace(/^_service_info_/, '')}:
-                                  </span>
-                                  <div className="mt-1 space-y-0.5">
-                                    {visibleLines.map((line, i) => {
-                                      const sevClass = severityLineClass(line);
-                                      const isVuln = line.includes('VULNERABILITY');
-                                      return (
-                                        <div
-                                          key={i}
-                                          className={
-                                            sevClass
-                                              ? sevClass
-                                              : isVuln
-                                              ? 'text-amber-300 font-medium'
-                                              : normalized.hasError
-                                              ? 'text-slate-500'
-                                              : 'text-slate-400'
-                                          }
-                                        >
-                                          {line}
-                                        </div>
-                                      );
-                                    })}
-                                  </div>
-                                  {shouldTruncate && (
-                                    <button
-                                      onClick={() => {
-                                        const newSet = new Set(expandedProbes);
-                                        if (isExpanded) {
-                                          newSet.delete(probeKey);
-                                        } else {
-                                          newSet.add(probeKey);
-                                        }
-                                        setExpandedProbes(newSet);
-                                      }}
-                                      className="mt-1 text-xs text-brand-primary hover:underline cursor-pointer"
-                                    >
-                                      {isExpanded ? 'Show less' : `+${normalized.lines.length - maxCollapsedLines} more lines`}
-                                    </button>
-                                  )}
-                                </div>
+                                  probeName={probeName}
+                                  result={result}
+                                  resultKey={probeKey}
+                                  isExpanded={expandedProbes.has(probeKey)}
+                                  onToggleExpand={() => {
+                                    const newSet = new Set(expandedProbes);
+                                    if (expandedProbes.has(probeKey)) {
+                                      newSet.delete(probeKey);
+                                    } else {
+                                      newSet.add(probeKey);
+                                    }
+                                    setExpandedProbes(newSet);
+                                  }}
+                                  accentColor="amber"
+                                  namePrefix="_service_info_"
+                                  compact
+                                />
                               );
                             })}
                           </div>
@@ -189,69 +144,27 @@ export function DetailedWorkerReports({ reports, job }: DetailedWorkerReportsPro
                           <p className="text-sm font-semibold text-blue-400 mb-2">Port {port}</p>
                           <div className="space-y-1">
                             {Object.entries(tests as Record<string, unknown>).map(([testName, result]) => {
-                              if (result === null || result === undefined) return null;
-                              const normalized = normalizeProbeResult(result);
-                              if (normalized.lines.length === 0) return null;
                               const probeKey = `${cid}-web-${port}-${testName}`;
-                              const isExpanded = expandedProbes.has(probeKey);
-                              const maxCollapsedLines = 4;
-                              const shouldTruncate = normalized.lines.length > maxCollapsedLines;
-                              const visibleLines = shouldTruncate && !isExpanded
-                                ? normalized.lines.slice(0, maxCollapsedLines)
-                                : normalized.lines;
-
                               return (
-                                <div
+                                <ProbeResultBlock
                                   key={testName}
-                                  className={`text-xs rounded px-2 py-1.5 ${
-                                    normalized.hasVulnerability
-                                      ? 'bg-rose-900/30 border border-rose-500/30'
-                                      : normalized.hasError
-                                      ? 'bg-slate-800/50 text-slate-500'
-                                      : 'bg-slate-800/50'
-                                  }`}
-                                >
-                                  <span className={`font-medium ${
-                                    normalized.hasVulnerability ? 'text-rose-300' : normalized.hasError ? 'text-slate-500' : 'text-slate-300'
-                                  }`}>
-                                    {testName.replace(/^_web_test_/, '')}:
-                                  </span>
-                                  <div className="mt-1 space-y-0.5">
-                                    {visibleLines.map((line, i) => {
-                                      const isVuln = line.includes('VULNERABILITY');
-                                      return (
-                                        <div
-                                          key={i}
-                                          className={
-                                            isVuln
-                                              ? 'text-rose-300 font-medium'
-                                              : normalized.hasError
-                                              ? 'text-slate-500'
-                                              : 'text-slate-400'
-                                          }
-                                        >
-                                          {line}
-                                        </div>
-                                      );
-                                    })}
-                                  </div>
-                                  {shouldTruncate && (
-                                    <button
-                                      onClick={() => {
-                                        const newSet = new Set(expandedProbes);
-                                        if (isExpanded) {
-                                          newSet.delete(probeKey);
-                                        } else {
-                                          newSet.add(probeKey);
-                                        }
-                                        setExpandedProbes(newSet);
-                                      }}
-                                      className="mt-1 text-xs text-brand-primary hover:underline cursor-pointer"
-                                    >
-                                      {isExpanded ? 'Show less' : `+${normalized.lines.length - maxCollapsedLines} more lines`}
-                                    </button>
-                                  )}
-                                </div>
+                                  probeName={testName}
+                                  result={result}
+                                  resultKey={probeKey}
+                                  isExpanded={expandedProbes.has(probeKey)}
+                                  onToggleExpand={() => {
+                                    const newSet = new Set(expandedProbes);
+                                    if (expandedProbes.has(probeKey)) {
+                                      newSet.delete(probeKey);
+                                    } else {
+                                      newSet.add(probeKey);
+                                    }
+                                    setExpandedProbes(newSet);
+                                  }}
+                                  accentColor="rose"
+                                  namePrefix="_web_test_"
+                                  compact
+                                />
                               );
                             })}
                           </div>
