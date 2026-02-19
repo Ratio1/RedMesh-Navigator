@@ -150,6 +150,43 @@ export function normalizeProbeResult(result: unknown): NormalizedProbeResult {
     }
     // (starttls / open_relay / vrfy / expn are captured via vulnerabilities list)
 
+    // SSH-specific fields
+    if (obj.ssh_version) {
+      lines.push(`SSH version: ${String(obj.ssh_version)}`);
+    }
+    if (Array.isArray(obj.weak_algorithms) && obj.weak_algorithms.length > 0) {
+      for (const algo of obj.weak_algorithms) {
+        lines.push(`Weak ${String(algo)}`);
+      }
+    }
+
+    // Redis-specific fields
+    if (obj.version) {
+      lines.push(`Version: ${String(obj.version)}`);
+    }
+    if (obj.os) {
+      lines.push(`OS: ${String(obj.os)}`);
+    }
+    if (typeof obj.config_writable === 'boolean') {
+      lines.push(`CONFIG writable: ${obj.config_writable ? 'Yes' : 'No'}`);
+    }
+    if (typeof obj.db_size === 'number') {
+      lines.push(`DB size: ${obj.db_size} keys`);
+    }
+    if (Array.isArray(obj.connected_clients) && obj.connected_clients.length > 0) {
+      lines.push(`Connected clients: ${obj.connected_clients.join(', ')}`);
+    }
+
+    // MySQL-specific fields
+    if (obj.auth_plugin) {
+      lines.push(`Auth plugin: ${String(obj.auth_plugin)}`);
+    }
+
+    // VNC-specific fields
+    if (Array.isArray(obj.security_type_labels) && obj.security_type_labels.length > 0) {
+      lines.push(`Security types: ${obj.security_type_labels.join(', ')}`);
+    }
+
     // HTTP-specific fields
     if (obj.server) {
       lines.push(`Server: ${String(obj.server)}`);
@@ -170,6 +207,10 @@ export function normalizeProbeResult(result: unknown): NormalizedProbeResult {
       'server_type', 'features', 'anonymous_access', 'write_access', 'tls_supported',
       'directory_listing', 'negotiation_options', 'system_info',
       'server_hostname', 'max_message_size', 'starttls', 'open_relay', 'vrfy_enabled', 'expn_enabled',
+      'ssh_version', 'weak_algorithms',
+      'version', 'os', 'config_writable', 'db_size', 'connected_clients',
+      'auth_plugin', 'protocol_byte',
+      'security_types', 'security_type_labels',
       'server', 'title', 'technologies', 'dangerous_methods',
       'findings',
     ]);
