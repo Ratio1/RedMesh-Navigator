@@ -5,9 +5,22 @@
  * structured dict (new format from enhanced probes like SSH).
  */
 
+export interface ParsedFinding {
+  severity: 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW' | 'INFO';
+  title: string;
+  description?: string;
+  evidence?: string;
+  remediation?: string;
+  owasp_id?: string;
+  cwe_id?: string;
+  confidence?: string;
+}
+
 export interface NormalizedProbeResult {
   /** Human-readable summary lines. */
   lines: string[];
+  /** Structured findings parsed from the probe result. */
+  findings: ParsedFinding[];
   /** Whether any vulnerability was detected. */
   hasVulnerability: boolean;
   /** Whether the probe encountered an error / timeout. */
@@ -23,13 +36,14 @@ export interface NormalizedProbeResult {
  */
 export function normalizeProbeResult(result: unknown): NormalizedProbeResult {
   if (result === null || result === undefined) {
-    return { lines: [], hasVulnerability: false, hasError: false, vulnerabilities: [], banner: null };
+    return { lines: [], findings: [], hasVulnerability: false, hasError: false, vulnerabilities: [], banner: null };
   }
 
   // --- Structured dict format (e.g., _service_info_22) ---
   if (typeof result === 'object' && !Array.isArray(result)) {
     const obj = result as Record<string, unknown>;
     const lines: string[] = [];
+    const findings: ParsedFinding[] = [];
     const vulnerabilities: string[] = [];
     let hasError = false;
     const banner = obj.banner ? String(obj.banner) : null;
@@ -37,6 +51,7 @@ export function normalizeProbeResult(result: unknown): NormalizedProbeResult {
     if (obj.error) {
       return {
         lines: [String(obj.error)],
+        findings: [],
         hasVulnerability: false,
         hasError: true,
         vulnerabilities: [],
@@ -49,9 +64,18 @@ export function normalizeProbeResult(result: unknown): NormalizedProbeResult {
       for (const f of obj.findings) {
         if (typeof f !== 'object' || f === null) continue;
         const finding = f as Record<string, unknown>;
-        const severity = String(finding.severity ?? 'INFO').toUpperCase();
+        const severity = String(finding.severity ?? 'INFO').toUpperCase() as ParsedFinding['severity'];
         const title = String(finding.title ?? '');
         const isVuln = severity === 'CRITICAL' || severity === 'HIGH' || severity === 'MEDIUM';
+
+        const parsed: ParsedFinding = { severity, title };
+        if (finding.description) parsed.description = String(finding.description);
+        if (finding.evidence) parsed.evidence = String(finding.evidence);
+        if (finding.remediation) parsed.remediation = String(finding.remediation);
+        if (finding.owasp_id) parsed.owasp_id = String(finding.owasp_id);
+        if (finding.cwe_id) parsed.cwe_id = String(finding.cwe_id);
+        if (finding.confidence) parsed.confidence = String(finding.confidence);
+        findings.push(parsed);
 
         if (isVuln) {
           const label = `VULNERABILITY: [${severity}] ${title}`;
@@ -161,6 +185,7 @@ export function normalizeProbeResult(result: unknown): NormalizedProbeResult {
 
     return {
       lines,
+      findings,
       hasVulnerability: vulnerabilities.length > 0,
       hasError,
       vulnerabilities,
@@ -175,6 +200,7 @@ export function normalizeProbeResult(result: unknown): NormalizedProbeResult {
 
   return {
     lines,
+    findings: [],
     hasVulnerability: str.includes('VULNERABILITY'),
     hasError: str.includes('failed') || str.includes('timed out') || str.startsWith('ERROR:'),
     vulnerabilities,

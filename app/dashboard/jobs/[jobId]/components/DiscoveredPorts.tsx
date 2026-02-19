@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import Card from '@/components/ui/Card';
 import Button from '@/components/ui/Button';
-import { normalizeProbeResult, severityLineClass } from '@/lib/utils/probeResult';
+import { ProbeResultBlock } from './ProbeResultBlock';
 import type { AggregatedPortsData } from '../types';
 
 interface DiscoveredPortsProps {
@@ -92,72 +92,26 @@ export function DiscoveredPorts({ aggregatedPorts }: DiscoveredPortsProps) {
                     </p>
                     <div className="space-y-2">
                       {Object.entries(aggregatedPorts.services.get(selectedPort) as Record<string, unknown>).map(([probeName, result]) => {
-                        if (result === null || result === undefined) return null;
-                        const normalized = normalizeProbeResult(result);
-                        if (normalized.lines.length === 0) return null;
                         const resultKey = `service-${selectedPort}-${probeName}`;
-                        const isExpanded = expandedResults.has(resultKey);
-                        const maxCollapsedLines = 4;
-                        const shouldTruncate = normalized.lines.length > maxCollapsedLines;
-                        const visibleLines = shouldTruncate && !isExpanded
-                          ? normalized.lines.slice(0, maxCollapsedLines)
-                          : normalized.lines;
-
                         return (
-                          <div
+                          <ProbeResultBlock
                             key={probeName}
-                            className={`rounded px-3 py-2 text-sm ${
-                              normalized.hasVulnerability
-                                ? 'bg-amber-900/30 border border-amber-500/30'
-                                : normalized.hasError
-                                ? 'bg-slate-800/50 border border-white/5'
-                                : 'bg-slate-900/50 border border-white/5'
-                            }`}
-                          >
-                            <span className={`font-medium ${
-                              normalized.hasVulnerability ? 'text-amber-300' : normalized.hasError ? 'text-slate-500' : 'text-slate-300'
-                            }`}>
-                              {probeName.replace(/^_service_info_/, '')}:
-                            </span>
-                            <div className="mt-1 space-y-0.5">
-                              {visibleLines.map((line, i) => {
-                                const sevClass = severityLineClass(line);
-                                const isVuln = line.includes('VULNERABILITY');
-                                return (
-                                  <div
-                                    key={i}
-                                    className={
-                                      sevClass
-                                        ? sevClass
-                                        : isVuln
-                                        ? 'text-amber-300 font-medium'
-                                        : normalized.hasError
-                                        ? 'text-slate-500'
-                                        : 'text-slate-400'
-                                    }
-                                  >
-                                    {line}
-                                  </div>
-                                );
-                              })}
-                            </div>
-                            {shouldTruncate && (
-                              <button
-                                onClick={() => {
-                                  const newSet = new Set(expandedResults);
-                                  if (isExpanded) {
-                                    newSet.delete(resultKey);
-                                  } else {
-                                    newSet.add(resultKey);
-                                  }
-                                  setExpandedResults(newSet);
-                                }}
-                                className="mt-1 text-xs text-brand-primary hover:underline cursor-pointer"
-                              >
-                                {isExpanded ? 'Show less' : `+${normalized.lines.length - maxCollapsedLines} more lines`}
-                              </button>
-                            )}
-                          </div>
+                            probeName={probeName}
+                            result={result}
+                            resultKey={resultKey}
+                            isExpanded={expandedResults.has(resultKey)}
+                            onToggleExpand={() => {
+                              const newSet = new Set(expandedResults);
+                              if (expandedResults.has(resultKey)) {
+                                newSet.delete(resultKey);
+                              } else {
+                                newSet.add(resultKey);
+                              }
+                              setExpandedResults(newSet);
+                            }}
+                            accentColor="amber"
+                            namePrefix="_service_info_"
+                          />
                         );
                       })}
                     </div>
@@ -172,69 +126,26 @@ export function DiscoveredPorts({ aggregatedPorts }: DiscoveredPortsProps) {
                     </p>
                     <div className="space-y-2">
                       {Object.entries(aggregatedPorts.webTests.get(selectedPort) as Record<string, unknown>).map(([testName, result]) => {
-                        if (result === null || result === undefined) return null;
-                        const normalized = normalizeProbeResult(result);
-                        if (normalized.lines.length === 0) return null;
                         const resultKey = `web-${selectedPort}-${testName}`;
-                        const isExpanded = expandedResults.has(resultKey);
-                        const maxCollapsedLines = 4;
-                        const shouldTruncate = normalized.lines.length > maxCollapsedLines;
-                        const visibleLines = shouldTruncate && !isExpanded
-                          ? normalized.lines.slice(0, maxCollapsedLines)
-                          : normalized.lines;
-
                         return (
-                          <div
+                          <ProbeResultBlock
                             key={testName}
-                            className={`rounded px-3 py-2 text-sm ${
-                              normalized.hasVulnerability
-                                ? 'bg-rose-900/30 border border-rose-500/30'
-                                : normalized.hasError
-                                ? 'bg-slate-800/50 border border-white/5'
-                                : 'bg-slate-900/50 border border-white/5'
-                            }`}
-                          >
-                            <span className={`font-medium ${
-                              normalized.hasVulnerability ? 'text-rose-300' : normalized.hasError ? 'text-slate-500' : 'text-slate-300'
-                            }`}>
-                              {testName.replace(/^_web_test_/, '')}:
-                            </span>
-                            <div className="mt-1 space-y-0.5">
-                              {visibleLines.map((line, i) => {
-                                const isVuln = line.includes('VULNERABILITY');
-                                return (
-                                  <div
-                                    key={i}
-                                    className={
-                                      isVuln
-                                        ? 'text-rose-300 font-medium'
-                                        : normalized.hasError
-                                        ? 'text-slate-500'
-                                        : 'text-slate-400'
-                                    }
-                                  >
-                                    {line}
-                                  </div>
-                                );
-                              })}
-                            </div>
-                            {shouldTruncate && (
-                              <button
-                                onClick={() => {
-                                  const newSet = new Set(expandedResults);
-                                  if (isExpanded) {
-                                    newSet.delete(resultKey);
-                                  } else {
-                                    newSet.add(resultKey);
-                                  }
-                                  setExpandedResults(newSet);
-                                }}
-                                className="mt-1 text-xs text-brand-primary hover:underline cursor-pointer"
-                              >
-                                {isExpanded ? 'Show less' : `+${normalized.lines.length - maxCollapsedLines} more lines`}
-                              </button>
-                            )}
-                          </div>
+                            probeName={testName}
+                            result={result}
+                            resultKey={resultKey}
+                            isExpanded={expandedResults.has(resultKey)}
+                            onToggleExpand={() => {
+                              const newSet = new Set(expandedResults);
+                              if (expandedResults.has(resultKey)) {
+                                newSet.delete(resultKey);
+                              } else {
+                                newSet.add(resultKey);
+                              }
+                              setExpandedResults(newSet);
+                            }}
+                            accentColor="rose"
+                            namePrefix="_web_test_"
+                          />
                         );
                       })}
                     </div>
