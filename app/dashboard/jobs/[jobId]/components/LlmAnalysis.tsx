@@ -176,7 +176,7 @@ function formatDate(value?: string): string {
 }
 
 export function LlmAnalysis({ analysis, passNr }: LlmAnalysisProps) {
-  const [expanded, setExpanded] = useState(true);
+  const [expanded, setExpanded] = useState(false);
 
   const renderedContent = useMemo(() => {
     return renderMarkdown(analysis.content);
