@@ -197,8 +197,17 @@ export function normalizeProbeResult(result: unknown): NormalizedProbeResult {
     if (Array.isArray(obj.technologies) && obj.technologies.length > 0) {
       lines.push(`Technologies: ${obj.technologies.join(', ')}`);
     }
-    if (Array.isArray(obj.dangerous_methods) && obj.dangerous_methods.length > 0) {
+    // Only show dangerous_methods when there are no structured findings for them
+    if (Array.isArray(obj.dangerous_methods) && obj.dangerous_methods.length > 0 && findings.length === 0) {
       lines.push(`Dangerous methods: ${obj.dangerous_methods.join(', ')}`);
+    }
+
+    // Tech fingerprint fields
+    if (obj.powered_by) {
+      lines.push(`X-Powered-By: ${String(obj.powered_by)}`);
+    }
+    if (obj.generator) {
+      lines.push(`Generator: ${String(obj.generator)}`);
     }
 
     // Catch any other string keys we haven't handled
@@ -212,6 +221,7 @@ export function normalizeProbeResult(result: unknown): NormalizedProbeResult {
       'auth_plugin', 'protocol_byte',
       'security_types', 'security_type_labels',
       'server', 'title', 'technologies', 'dangerous_methods',
+      'powered_by', 'generator', 'vpn_endpoints',
       'findings',
     ]);
     for (const [key, val] of Object.entries(obj)) {
