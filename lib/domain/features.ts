@@ -55,7 +55,7 @@ export function getDefaultFeatureCatalog(): RedMeshFeature[] {
       label: 'Discovery',
       description: 'Enumerate exposed files, admin panels, and homepage secrets (OWASP WSTG-INFO).',
       category: 'web',
-      methods: ['_web_test_common', '_web_test_homepage']
+      methods: ['_web_test_common', '_web_test_homepage', '_web_test_tech_fingerprint', '_web_test_vpn_endpoints']
     },
     {
       id: 'web_hardening',
@@ -87,6 +87,13 @@ export function getDefaultFeatureCatalog(): RedMeshFeature[] {
       description: 'Non-destructive probes for path traversal, reflected XSS, and SQL injection (OWASP WSTG-INPV).',
       category: 'web',
       methods: ['_web_test_path_traversal', '_web_test_xss', '_web_test_sql_injection']
+    },
+    {
+      id: 'active_auth',
+      label: 'Credential testing',
+      description: 'Test default/weak credentials on database and remote access services. May trigger account lockout.',
+      category: 'service',
+      methods: ['_service_info_3306_creds', '_service_info_5432_creds']
     }
   ];
 }

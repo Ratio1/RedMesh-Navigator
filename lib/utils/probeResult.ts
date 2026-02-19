@@ -44,6 +44,25 @@ export function normalizeProbeResult(result: unknown): NormalizedProbeResult {
       };
     }
 
+    // --- Structured findings array (new format from enhanced probes) ---
+    if (Array.isArray(obj.findings) && obj.findings.length > 0) {
+      for (const f of obj.findings) {
+        if (typeof f !== 'object' || f === null) continue;
+        const finding = f as Record<string, unknown>;
+        const severity = String(finding.severity ?? 'INFO').toUpperCase();
+        const title = String(finding.title ?? '');
+        const isVuln = severity === 'CRITICAL' || severity === 'HIGH' || severity === 'MEDIUM';
+
+        if (isVuln) {
+          const label = `VULNERABILITY: [${severity}] ${title}`;
+          vulnerabilities.push(label);
+          lines.push(label);
+        } else {
+          lines.push(`[${severity}] ${title}`);
+        }
+      }
+    }
+
     if (banner) {
       lines.push(`Banner: ${banner}`);
     }
@@ -55,8 +74,11 @@ export function normalizeProbeResult(result: unknown): NormalizedProbeResult {
     if (Array.isArray(obj.vulnerabilities)) {
       for (const v of obj.vulnerabilities) {
         const vs = String(v);
-        vulnerabilities.push(vs);
-        lines.push(`VULNERABILITY: ${vs}`);
+        // Avoid duplicates if already added via findings
+        if (!vulnerabilities.includes(vs) && !vulnerabilities.some(existing => existing.includes(vs))) {
+          vulnerabilities.push(vs);
+          lines.push(`VULNERABILITY: ${vs}`);
+        }
       }
     }
 
@@ -125,6 +147,7 @@ export function normalizeProbeResult(result: unknown): NormalizedProbeResult {
       'directory_listing', 'negotiation_options', 'system_info',
       'server_hostname', 'max_message_size', 'starttls', 'open_relay', 'vrfy_enabled', 'expn_enabled',
       'server', 'title', 'technologies', 'dangerous_methods',
+      'findings',
     ]);
     for (const [key, val] of Object.entries(obj)) {
       if (!handled.has(key) && val !== null && val !== undefined) {
@@ -165,4 +188,18 @@ export function normalizeProbeResult(result: unknown): NormalizedProbeResult {
 export function probeResultToString(result: unknown): string {
   const normalized = normalizeProbeResult(result);
   return normalized.lines.join('\n');
+}
+
+/**
+ * Return Tailwind CSS classes for a severity-tagged line.
+ * Matches [CRITICAL], [HIGH], [MEDIUM], [LOW], [INFO] prefixes.
+ */
+export function severityLineClass(line: string): string {
+  if (line.includes('[CRITICAL]')) return 'text-red-500 font-bold';
+  if (line.includes('[HIGH]')) return 'text-orange-400 font-bold';
+  if (line.includes('[MEDIUM]')) return 'text-yellow-400';
+  if (line.includes('[LOW]')) return 'text-blue-300';
+  if (line.includes('[INFO]')) return 'text-slate-400';
+  if (line.includes('VULNERABILITY')) return 'text-amber-300 font-medium';
+  return '';
 }

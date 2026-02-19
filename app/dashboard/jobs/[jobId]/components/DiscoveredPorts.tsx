@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import Card from '@/components/ui/Card';
 import Button from '@/components/ui/Button';
-import { normalizeProbeResult } from '@/lib/utils/probeResult';
+import { normalizeProbeResult, severityLineClass } from '@/lib/utils/probeResult';
 import type { AggregatedPortsData } from '../types';
 
 interface DiscoveredPortsProps {
@@ -121,12 +121,15 @@ export function DiscoveredPorts({ aggregatedPorts }: DiscoveredPortsProps) {
                             </span>
                             <div className="mt-1 space-y-0.5">
                               {visibleLines.map((line, i) => {
+                                const sevClass = severityLineClass(line);
                                 const isVuln = line.includes('VULNERABILITY');
                                 return (
                                   <div
                                     key={i}
                                     className={
-                                      isVuln
+                                      sevClass
+                                        ? sevClass
+                                        : isVuln
                                         ? 'text-amber-300 font-medium'
                                         : normalized.hasError
                                         ? 'text-slate-500'
