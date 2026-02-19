@@ -3,7 +3,7 @@
 import { useState, useMemo } from 'react';
 import Card from '@/components/ui/Card';
 import Badge from '@/components/ui/Badge';
-import { normalizeProbeResult } from '@/lib/utils/probeResult';
+import { normalizeProbeResult, severityLineClass } from '@/lib/utils/probeResult';
 import type { Job, WorkerReport } from '@/lib/api/types';
 
 interface DetailedWorkerReportsProps {
@@ -131,12 +131,15 @@ export function DetailedWorkerReports({ reports, job }: DetailedWorkerReportsPro
                                   </span>
                                   <div className="mt-1 space-y-0.5">
                                     {visibleLines.map((line, i) => {
+                                      const sevClass = severityLineClass(line);
                                       const isVuln = line.includes('VULNERABILITY');
                                       return (
                                         <div
                                           key={i}
                                           className={
-                                            isVuln
+                                            sevClass
+                                              ? sevClass
+                                              : isVuln
                                               ? 'text-amber-300 font-medium'
                                               : normalized.hasError
                                               ? 'text-slate-500'
