@@ -34,6 +34,13 @@ export interface LaunchTestRequest {
   task_name?: string;
   task_description?: string;
   selected_peers?: string[];
+  // Security hardening options
+  redact_credentials?: boolean;
+  ics_safe_mode?: boolean;
+  rate_limit_enabled?: boolean;
+  scanner_identity?: string;
+  scanner_user_agent?: string;
+  authorized?: boolean;
 }
 
 // Worker Assignment
@@ -79,6 +86,13 @@ export interface JobSpecs {
   task_description?: string;
   duration?: number;
   pass_date_started?: number;
+  // Security hardening options
+  redact_credentials?: boolean;
+  ics_safe_mode?: boolean;
+  rate_limit_enabled?: boolean;
+  scanner_identity?: string;
+  scanner_user_agent?: string;
+  authorized?: boolean;
 }
 
 // Launch Test Response

@@ -127,6 +127,19 @@ export async function POST(request: Request) {
     ? body.selectedPeers.filter((value: unknown) => typeof value === 'string' && value.trim())
     : undefined;
 
+  // Security hardening options
+  if (body.authorized !== true) {
+    return NextResponse.json(
+      { message: 'Authorization confirmation is required to launch a scan.' },
+      { status: 400 }
+    );
+  }
+  const redactCredentials = body.redactCredentials !== false;
+  const icsSafeMode = body.icsSafeMode !== false;
+  const rateLimitEnabled = body.rateLimitEnabled !== false;
+  const scannerIdentity = typeof body.scannerIdentity === 'string' ? body.scannerIdentity.trim() : '';
+  const scannerUserAgent = typeof body.scannerUserAgent === 'string' ? body.scannerUserAgent.trim() : '';
+
   const payload: CreateJobInput = {
     name: body.name,
     summary: body.summary,
@@ -145,7 +158,13 @@ export async function POST(request: Request) {
     duration,
     scanDelay,
     monitorInterval: duration === DURATION.CONTINUOUS ? monitorInterval : undefined,
-    selectedPeers
+    selectedPeers,
+    redactCredentials,
+    icsSafeMode,
+    rateLimitEnabled,
+    scannerIdentity: scannerIdentity || undefined,
+    scannerUserAgent: scannerUserAgent || undefined,
+    authorized: true
   };
 
   jobsLogger.debug('Calling createJob with payload:', payload);

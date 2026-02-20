@@ -579,7 +579,14 @@ function createJobInputToLaunchRequest(input: CreateJobInput): LaunchTestRequest
     scan_max_delay: input.scanDelay?.maxSeconds,
     task_name: input.name || undefined,
     task_description: input.summary || undefined,
-    selected_peers: input.selectedPeers?.length ? input.selectedPeers : undefined
+    selected_peers: input.selectedPeers?.length ? input.selectedPeers : undefined,
+    // Security hardening options
+    redact_credentials: input.redactCredentials,
+    ics_safe_mode: input.icsSafeMode,
+    rate_limit_enabled: input.rateLimitEnabled,
+    scanner_identity: input.scannerIdentity || undefined,
+    scanner_user_agent: input.scannerUserAgent || undefined,
+    authorized: input.authorized
   };
 }
 
