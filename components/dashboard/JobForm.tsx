@@ -69,6 +69,15 @@ export default function JobForm({ onCreated }: JobFormProps): JSX.Element {
   const [expandedFeatures, setExpandedFeatures] = useState(false);
   const [nodeViewMode, setNodeViewMode] = useState<'list' | 'map'>('list');
 
+  // Security hardening options
+  const [redactCredentials, setRedactCredentials] = useState(true);
+  const [icsSafeMode, setIcsSafeMode] = useState(true);
+  const [rateLimitEnabled, setRateLimitEnabled] = useState(true);
+  const [scannerIdentity, setScannerIdentity] = useState('');
+  const [scannerUserAgent, setScannerUserAgent] = useState('');
+  const [authorized, setAuthorized] = useState(false);
+  const [expandedIdentity, setExpandedIdentity] = useState(false);
+
   // Check if peers have location data for map view
   const peersWithLocation = peers.filter((p) => p.lat !== 0 || p.lng !== 0);
   const hasMapData = peersWithLocation.length > 0;
@@ -147,7 +156,13 @@ export default function JobForm({ onCreated }: JobFormProps): JSX.Element {
       duration,
       scanDelay: scanDelayPayload,
       monitorInterval: duration === DURATION.CONTINUOUS && monitorInterval ? Number(monitorInterval) : undefined,
-      selectedPeers: selectedPeers.length > 0 ? selectedPeers : undefined
+      selectedPeers: selectedPeers.length > 0 ? selectedPeers : undefined,
+      redactCredentials,
+      icsSafeMode,
+      rateLimitEnabled,
+      scannerIdentity: scannerIdentity.trim() || undefined,
+      scannerUserAgent: scannerUserAgent.trim() || undefined,
+      authorized
     };
 
     console.log('[JobForm] Sending request to /api/jobs:', requestBody);
@@ -192,6 +207,13 @@ export default function JobForm({ onCreated }: JobFormProps): JSX.Element {
       setMonitorInterval('60');
       setSelectedPeers(peers.map((p) => p.address));
       peersTouchedRef.current = false;
+      setRedactCredentials(true);
+      setIcsSafeMode(true);
+      setRateLimitEnabled(true);
+      setScannerIdentity('');
+      setScannerUserAgent('');
+      setAuthorized(false);
+      setExpandedIdentity(false);
 
       if (onCreated) {
         await onCreated(createdJob);
@@ -594,6 +616,85 @@ export default function JobForm({ onCreated }: JobFormProps): JSX.Element {
             />
           </div>
         </div>
+        {/* Security options */}
+        <div className="space-y-4 rounded-xl border border-white/10 bg-slate-900/30 p-4">
+          <p className="text-sm font-medium text-slate-200">Security options</p>
+
+          {/* Redact credentials */}
+          <div className="flex items-start justify-between gap-4">
+            <div className="min-w-0">
+              <p className="text-sm text-slate-200">Redact credentials in reports</p>
+              <p className="text-xs text-slate-400">Strip accepted passwords from persisted scan reports. Credentials remain visible during the active session.</p>
+            </div>
+            <div className="flex items-center gap-1 rounded-lg border border-white/10 bg-slate-900/50 p-0.5">
+              <button type="button" className={`rounded-md px-3 py-1 text-xs transition ${!redactCredentials ? 'bg-slate-700 text-slate-100' : 'text-slate-400 hover:text-slate-200'}`} onClick={() => setRedactCredentials(false)}>Off</button>
+              <button type="button" className={`rounded-md px-3 py-1 text-xs transition ${redactCredentials ? 'bg-brand-primary/20 text-slate-100' : 'text-slate-400 hover:text-slate-200'}`} onClick={() => setRedactCredentials(true)}>On</button>
+            </div>
+          </div>
+
+          {/* ICS safe mode */}
+          <div className="flex items-start justify-between gap-4">
+            <div className="min-w-0">
+              <p className="text-sm text-slate-200">ICS safe mode</p>
+              <p className="text-xs text-slate-400">Stop scanning a host when industrial control system indicators are detected (Modbus, SCADA, PLC). Prevents accidental disruption.</p>
+            </div>
+            <div className="flex items-center gap-1 rounded-lg border border-white/10 bg-slate-900/50 p-0.5">
+              <button type="button" className={`rounded-md px-3 py-1 text-xs transition ${!icsSafeMode ? 'bg-slate-700 text-slate-100' : 'text-slate-400 hover:text-slate-200'}`} onClick={() => setIcsSafeMode(false)}>Off</button>
+              <button type="button" className={`rounded-md px-3 py-1 text-xs transition ${icsSafeMode ? 'bg-brand-primary/20 text-slate-100' : 'text-slate-400 hover:text-slate-200'}`} onClick={() => setIcsSafeMode(true)}>On</button>
+            </div>
+          </div>
+
+          {/* Rate limiting */}
+          <div className="flex items-start justify-between gap-4">
+            <div className="min-w-0">
+              <p className="text-sm text-slate-200">Rate limiting</p>
+              <p className="text-xs text-slate-400">Enforce minimum delays between probes to reduce target impact. Recommended for production environments.</p>
+            </div>
+            <div className="flex items-center gap-1 rounded-lg border border-white/10 bg-slate-900/50 p-0.5">
+              <button type="button" className={`rounded-md px-3 py-1 text-xs transition ${!rateLimitEnabled ? 'bg-slate-700 text-slate-100' : 'text-slate-400 hover:text-slate-200'}`} onClick={() => setRateLimitEnabled(false)}>Off</button>
+              <button type="button" className={`rounded-md px-3 py-1 text-xs transition ${rateLimitEnabled ? 'bg-brand-primary/20 text-slate-100' : 'text-slate-400 hover:text-slate-200'}`} onClick={() => setRateLimitEnabled(true)}>On</button>
+            </div>
+          </div>
+
+          {/* Scanner identity (expandable) */}
+          <div>
+            <button
+              type="button"
+              className="flex items-center gap-1.5 text-sm text-slate-400 hover:text-slate-200 transition"
+              onClick={() => setExpandedIdentity((v) => !v)}
+            >
+              <span className="text-xs">{expandedIdentity ? '\u25BE' : '\u25B8'}</span>
+              Customize scanner identity
+            </button>
+            {expandedIdentity && (
+              <div className="mt-3 space-y-3 pl-4 border-l border-white/5">
+                <div>
+                  <label htmlFor="scanner-identity" className="block text-xs text-slate-400 mb-1">EHLO / probe domain</label>
+                  <input
+                    id="scanner-identity"
+                    type="text"
+                    value={scannerIdentity}
+                    onChange={(e) => setScannerIdentity(e.target.value)}
+                    placeholder="probe.redmesh.local"
+                    className="w-full rounded-lg border border-white/10 bg-slate-900/50 px-3 py-2 text-sm text-slate-200 placeholder-slate-500 focus:border-brand-primary/50 focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label htmlFor="scanner-ua" className="block text-xs text-slate-400 mb-1">HTTP User-Agent</label>
+                  <input
+                    id="scanner-ua"
+                    type="text"
+                    value={scannerUserAgent}
+                    onChange={(e) => setScannerUserAgent(e.target.value)}
+                    placeholder="Leave empty for default"
+                    className="w-full rounded-lg border border-white/10 bg-slate-900/50 px-3 py-2 text-sm text-slate-200 placeholder-slate-500 focus:border-brand-primary/50 focus:outline-none"
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
         <div className="space-y-2">
           <label htmlFor="job-priority" className="block text-sm font-medium text-slate-200">
             Priority
@@ -753,6 +854,21 @@ export default function JobForm({ onCreated }: JobFormProps): JSX.Element {
             {successMessage}
           </div>
         )}
+        {/* Authorization confirmation */}
+        <div className="rounded-xl border border-white/10 bg-slate-900/30 p-4">
+          <label className="flex items-start gap-3 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={authorized}
+              onChange={(e) => setAuthorized(e.target.checked)}
+              className="mt-0.5 h-4 w-4 rounded border-white/20 bg-slate-900 text-brand-primary focus:ring-brand-primary/50"
+            />
+            <span className="text-sm text-slate-200">
+              I confirm I am authorized to scan this target and have obtained necessary permissions.
+            </span>
+          </label>
+        </div>
+
         {errorMessage && (
           <div className="rounded-lg border border-rose-500/30 bg-rose-500/15 px-4 py-3 text-sm text-rose-100">
             {errorMessage}
@@ -766,7 +882,8 @@ export default function JobForm({ onCreated }: JobFormProps): JSX.Element {
             !summary.trim() ||
             !target.trim() ||
             (Number(portEnd) || 0) < (Number(portStart) || 0) ||
-            tempoInvalid
+            tempoInvalid ||
+            !authorized
           }
         >
           {isSubmitting ? 'Creating...' : 'Create task'}

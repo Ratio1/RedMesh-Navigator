@@ -161,6 +161,13 @@ export interface CreateJobInput {
   scanDelay?: JobTempo;
   monitorInterval?: number; // Seconds between passes in continuous monitoring mode
   selectedPeers?: string[]; // List of peer addresses to run the test on
+  // Security hardening options
+  redactCredentials?: boolean;
+  icsSafeMode?: boolean;
+  rateLimitEnabled?: boolean;
+  scannerIdentity?: string;
+  scannerUserAgent?: string;
+  authorized?: boolean;
 }
 
 export interface UserAccount {
