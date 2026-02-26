@@ -1,4 +1,4 @@
-import { randomUUID } from 'crypto';
+const randomUUID = () => crypto.randomUUID();
 import {
   AuthSuccess,
   CreateJobInput,

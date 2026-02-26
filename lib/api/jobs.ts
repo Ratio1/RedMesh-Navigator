@@ -443,9 +443,9 @@ export function normalizeJobStatusResponse(response: GetJobStatusResponse): Job 
 
       // Merge web test findings for aggregate summary
       for (const [port, testResults] of Object.entries(report.web_tests_info)) {
-        const results = testResults as Record<string, string>;
+        const results = testResults as Record<string, unknown>;
         for (const [testId, result] of Object.entries(results)) {
-          if (result && !result.startsWith('ERROR:')) {
+          if (typeof result === 'string' && result && !result.startsWith('ERROR:')) {
             webFindings[`${port}:${testId}`] = result;
           }
         }
