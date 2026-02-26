@@ -82,6 +82,7 @@ export default function JobForm({ onCreated }: JobFormProps): JSX.Element {
   const peersWithLocation = peers.filter((p) => p.lat !== 0 || p.lng !== 0);
   const hasMapData = peersWithLocation.length > 0;
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [attempted, setAttempted] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -119,9 +120,15 @@ export default function JobForm({ onCreated }: JobFormProps): JSX.Element {
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     console.log('[JobForm] Submit started');
-    setIsSubmitting(true);
+    setAttempted(true);
     setErrorMessage(null);
     setSuccessMessage(null);
+
+    if (!name.trim() || !target.trim() || !authorized) {
+      return;
+    }
+
+    setIsSubmitting(true);
 
     if (tempoInvalid) {
       console.log('[JobForm] Validation failed: tempoInvalid');
@@ -189,6 +196,7 @@ export default function JobForm({ onCreated }: JobFormProps): JSX.Element {
       }
 
       setSuccessMessage(`Task "${createdJob.displayName ?? createdJob.id}" created.`);
+      setAttempted(false);
       setName('');
       setSummary('');
       setTarget('');
@@ -242,8 +250,12 @@ export default function JobForm({ onCreated }: JobFormProps): JSX.Element {
             placeholder="Firmware rollout for zone east"
             value={name}
             onChange={(event) => setName(event.target.value)}
+            invalid={attempted && !name.trim()}
             required
           />
+          {attempted && !name.trim() && (
+            <p className="text-xs text-[#e23d4b]">Task name is required.</p>
+          )}
         </div>
         <div className="space-y-2">
           <label htmlFor="job-summary" className="block text-sm font-medium text-slate-200">
@@ -254,7 +266,6 @@ export default function JobForm({ onCreated }: JobFormProps): JSX.Element {
             placeholder="Short description of the task scope"
             value={summary}
             onChange={(event) => setSummary(event.target.value)}
-            required
             rows={4}
           />
         </div>
@@ -267,8 +278,12 @@ export default function JobForm({ onCreated }: JobFormProps): JSX.Element {
             placeholder="10.0.5.12 or api.internal.local"
             value={target}
             onChange={(event) => setTarget(event.target.value)}
+            invalid={attempted && !target.trim()}
             required
           />
+          {attempted && !target.trim() && (
+            <p className="text-xs text-[#e23d4b]">Target is required.</p>
+          )}
         </div>
         <div className="space-y-2">
           <div className="space-y-1">
@@ -855,7 +870,7 @@ export default function JobForm({ onCreated }: JobFormProps): JSX.Element {
           </div>
         )}
         {/* Authorization confirmation */}
-        <div className="rounded-xl border border-white/10 bg-slate-900/30 p-4">
+        <div className={`rounded-xl border bg-slate-900/30 p-4 ${attempted && !authorized ? 'border-[#e23d4b]' : 'border-white/10'}`}>
           <label className="flex items-start gap-3 cursor-pointer select-none">
             <input
               type="checkbox"
@@ -867,6 +882,9 @@ export default function JobForm({ onCreated }: JobFormProps): JSX.Element {
               I confirm I am authorized to scan this target and have obtained necessary permissions.
             </span>
           </label>
+          {attempted && !authorized && (
+            <p className="text-xs text-[#e23d4b] mt-2">Authorization is required.</p>
+          )}
         </div>
 
         {errorMessage && (
@@ -874,17 +892,19 @@ export default function JobForm({ onCreated }: JobFormProps): JSX.Element {
             {errorMessage}
           </div>
         )}
+        {attempted && (!name.trim() || !target.trim() || !authorized) && (
+          <p className="text-xs text-[#e23d4b]">
+            Please fix the highlighted fields above:{' '}
+            {[
+              !name.trim() && 'task name',
+              !target.trim() && 'target',
+              !authorized && 'authorization',
+            ].filter(Boolean).join(', ')}.
+          </p>
+        )}
         <Button
           type="submit"
-          disabled={
-            isSubmitting ||
-            !name.trim() ||
-            !summary.trim() ||
-            !target.trim() ||
-            (Number(portEnd) || 0) < (Number(portStart) || 0) ||
-            tempoInvalid ||
-            !authorized
-          }
+          disabled={isSubmitting}
         >
           {isSubmitting ? 'Creating...' : 'Create task'}
         </Button>
