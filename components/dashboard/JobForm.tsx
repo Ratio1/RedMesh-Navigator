@@ -151,7 +151,7 @@ export default function JobForm({ onCreated }: JobFormProps): JSX.Element {
       features: selectedFeatures,
       workerCount,
       priority,
-      owner: user?.username,
+
       distribution,
       duration,
       scanDelay: scanDelayPayload,

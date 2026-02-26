@@ -1,10 +1,12 @@
 import { ApiError, ensure } from './errors';
 import {
+  ActorType,
   CreateJobInput,
   Job,
   JobAggregateReport,
   JobDistribution,
   JobDuration,
+  JobEventType,
   JobPortOrder,
   JobPriority,
   JobRunMode,
@@ -43,29 +45,27 @@ function coerceArray<T>(value: unknown): T[] {
   return [value as T];
 }
 
-function extractTimeline(raw: any): JobTimelineEntry[] {
-  const source = coerceArray<any>(raw?.timeline ?? raw?.events);
-  const mapped = source
-    .filter((entry) => entry)
-    .map((entry) => {
-      const label = entry.label || entry.event || entry.state || 'Status changed';
-      const ts = entry.at || entry.timestamp || entry.time || entry.date;
-      const when = ts ? new Date(ts) : undefined;
-      return when
-        ? { label, at: when.toISOString() }
-        : { label, at: new Date().toISOString() };
-    });
-
-  if (mapped.length === 0) {
-    return [
-      {
-        label: 'Job registered',
-        at: new Date().toISOString()
-      }
-    ];
+function mapTimelineFromBackend(
+  rawTimeline: Array<{ type: string; label: string; date: number; actor: string; actor_type: string; meta?: Record<string, unknown> }> | undefined
+): JobTimelineEntry[] {
+  if (!rawTimeline || rawTimeline.length === 0) {
+    return [];
   }
+  return rawTimeline.map((entry) => ({
+    type: entry.type as JobEventType,
+    label: entry.label,
+    date: new Date(entry.date * 1000).toISOString(),
+    actor: entry.actor,
+    actorType: (entry.actor_type ?? 'system') as ActorType,
+    meta: entry.meta,
+  }));
+}
 
-  return mapped.sort((a, b) => a.at.localeCompare(b.at));
+/**
+ * Find the first timeline entry matching a given event type.
+ */
+export function getEvent(timeline: JobTimelineEntry[], eventType: JobEventType): JobTimelineEntry | undefined {
+  return timeline.find((e) => e.type === eventType);
 }
 
 function normalizeWorker(id: string, payload: any): JobWorkerStatus {
@@ -207,10 +207,6 @@ function normalizeJob(raw: any): Job {
   ensure(id, 500, 'Job payload missing identifier.');
 
   const status = deriveStatus(raw);
-  const createdAt = raw.created_at ?? raw.createdAt ?? new Date().toISOString();
-  const updatedAt = raw.updated_at ?? raw.updatedAt ?? createdAt;
-  const startedAt = raw.started_at ?? raw.startedAt;
-  const completedAt = raw.completed_at ?? raw.completedAt;
 
   const workersPayload = raw.workers && typeof raw.workers === 'object' ? raw.workers : {};
   const workers = Object.entries(workersPayload).map(([workerId, payload]) =>
@@ -218,7 +214,7 @@ function normalizeJob(raw: any): Job {
   );
 
   const aggregate = normalizeAggregate(raw.aggregate ?? raw.result ?? raw.report);
-  const timeline = extractTimeline(raw);
+  const timeline = mapTimelineFromBackend(raw.timeline);
   const tempoPayload =
     raw.tempo ??
     raw.test_tempo ??
@@ -244,11 +240,7 @@ function normalizeJob(raw: any): Job {
     initiator: raw.launcher ?? raw.initiator ?? raw.owner ?? 'unknown',
     status,
     summary: raw.summary ?? raw.description ?? 'No summary provided.',
-    createdAt,
-    updatedAt,
-    startedAt,
-    completedAt,
-    owner: raw.owner ?? raw.launcher,
+
     payloadUri: raw.payload_uri ?? raw.payloadUri,
     priority: normalizePriority(raw.priority ?? raw.jobPriority ?? 'medium'),
     workerCount: workers.length || Number(raw.worker_count ?? raw.nrWorkers ?? 0),
@@ -283,17 +275,7 @@ function normalizePriority(value: unknown): JobPriority {
  * This handles the specific field mappings from the actual API response format.
  */
 function normalizeJobFromSpecs(specs: JobSpecs): Job {
-  const createdAt = specs.date_created
-    ? new Date(specs.date_created * 1000).toISOString()
-    : new Date().toISOString();
-
-  const updatedAt = specs.date_updated
-    ? new Date(specs.date_updated * 1000).toISOString()
-    : createdAt;
-
-  const finalizedAt = specs.date_finalized
-    ? new Date(specs.date_finalized * 1000).toISOString()
-    : undefined;
+  const timeline = mapTimelineFromBackend(specs.timeline);
 
   // Transform workers from Record<string, WorkerAssignment> to JobWorkerStatus[]
   const workers = Object.entries(specs.workers).map(([workerId, assignment]) => ({
@@ -321,17 +303,6 @@ function normalizeJobFromSpecs(specs: JobSpecs): Job {
     status = JOB_STATUS.STOPPING;
   } else if (jobStatus === 'STOPPED') {
     status = JOB_STATUS.STOPPED;
-  }
-
-  // Generate timeline from timestamps
-  const timeline: JobTimelineEntry[] = [
-    { label: 'Job created', at: createdAt }
-  ];
-  if (status === JOB_STATUS.RUNNING || status === JOB_STATUS.STOPPING || status === JOB_STATUS.COMPLETED || status === JOB_STATUS.STOPPED) {
-    timeline.push({ label: 'Job started', at: createdAt });
-  }
-  if (finalizedAt) {
-    timeline.push({ label: 'Job finalized', at: finalizedAt });
   }
 
   // Map distribution_strategy to UI format
@@ -374,12 +345,7 @@ function normalizeJobFromSpecs(specs: JobSpecs): Job {
     initiatorAlias: specs.launcher_alias,
     status,
     summary: specs.task_description || 'RedMesh scan job',
-    createdAt,
-    updatedAt,
-    startedAt: createdAt,
-    completedAt: finalizedAt,
-    finalizedAt,
-    owner: specs.launcher,
+
     payloadUri: undefined,
     priority: 'medium',
     workerCount: workers.length,
@@ -429,9 +395,7 @@ export function normalizeJobStatusResponse(response: GetJobStatusResponse): Job 
     summary: 'RedMesh scan job',
     initiator: 'unknown',
     priority: 'medium',
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-    timeline: [{ label: 'Status checked', at: new Date().toISOString() }],
+    timeline: [],
     exceptionPorts: [],
     featureSet: []
   };
@@ -524,7 +488,6 @@ export function normalizeJobStatusResponse(response: GetJobStatusResponse): Job 
     return {
       ...baseJob,
       status: JOB_STATUS.COMPLETED,
-      completedAt: new Date().toISOString(),
       workerCount: workers.length,
       workers,
       aggregate: {
@@ -619,12 +582,12 @@ export async function fetchJobs(authToken?: string): Promise<Job[]> {
 
 export async function createJob(
   input: CreateJobInput,
-  options: { authToken?: string; owner?: string }
+  options: { authToken?: string }
 ): Promise<Job> {
   const config = getAppConfig();
 
   if (config.mockMode || config.forceMockTasks) {
-    return createMockJob(input, options.owner);
+    return createMockJob(input);
   }
 
   if (!config.redmeshApiUrl) {

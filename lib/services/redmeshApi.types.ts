@@ -65,9 +65,7 @@ export interface JobSpecs {
   exceptions: number[];
   launcher: string;
   launcher_alias?: string;
-  date_created: number;
-  date_updated: number;
-  date_finalized?: number | null;
+  timeline?: Array<{ type: string; label: string; date: number; actor: string; actor_type: string; meta?: Record<string, unknown> }>;
   job_status: JobStatusType;
   workers: Record<string, WorkerAssignment>;
   distribution_strategy: DistributionStrategy;
@@ -85,7 +83,6 @@ export interface JobSpecs {
   task_name?: string;
   task_description?: string;
   duration?: number;
-  pass_date_started?: number;
   // Security hardening options
   redact_credentials?: boolean;
   ics_safe_mode?: boolean;

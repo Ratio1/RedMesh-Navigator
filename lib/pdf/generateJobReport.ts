@@ -512,13 +512,9 @@ export function generateJobReport({
   y += 5;
 
   // Timing Section
-  addHeader('Timing', 11);
-  addLabelValue('Created', formatDate(job.createdAt));
-  addLabelValue('Updated', formatDate(job.updatedAt));
-  addLabelValue('Started', formatDate(job.startedAt));
-  addLabelValue('Completed', formatDate(job.completedAt));
-  if (job.finalizedAt) {
-    addLabelValue('Finalized', formatDate(job.finalizedAt));
+  addHeader('Timeline', 11);
+  for (const event of job.timeline) {
+    addLabelValue(event.label, formatDate(event.date));
   }
   if (job.totalDuration != null) {
     addLabelValue('Duration', formatDuration(job.totalDuration));
@@ -535,9 +531,7 @@ export function generateJobReport({
   } else {
     addLabelValue('Initiator', job.initiator);
   }
-  if (job.owner && job.owner !== job.initiatorAddress) {
-    addLabelValue('Owner', job.owner);
-  }
+
   y += 5;
 
   // Enabled Features (full list)
@@ -1128,7 +1122,7 @@ export function generateJobReport({
       doc.text(entry.label, margin + 10, y);
       doc.setFont('Helvetica', 'normal');
       doc.setTextColor(...colors.muted);
-      doc.text(formatDate(entry.at), margin + 10, y + 4);
+      doc.text(formatDate(entry.date), margin + 10, y + 4);
       y += 12;
     });
   }

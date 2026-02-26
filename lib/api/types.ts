@@ -48,9 +48,17 @@ export interface JobAggregateReport {
   notes?: string;
 }
 
+export type JobEventType = 'created' | 'started' | 'completed' | 'finalized' | 'stopped'
+  | 'scheduled_for_stop' | 'pass_completed' | 'pass_started' | 'blockchain_submit' | 'llm_analysis';
+export type ActorType = 'system' | 'node' | 'user';
+
 export interface JobTimelineEntry {
+  type: JobEventType;
   label: string;
-  at: string;
+  date: string;
+  actor: string;
+  actorType: ActorType;
+  meta?: Record<string, unknown>;
 }
 
 export interface PassHistoryEntry {
@@ -109,12 +117,7 @@ export interface Job {
   initiatorAlias?: string; // Human-readable alias
   status: JobStatus;
   summary: string;
-  createdAt: string;
-  updatedAt: string;
-  startedAt?: string;
-  completedAt?: string;
-  finalizedAt?: string;
-  owner?: string;
+
   payloadUri?: string;
   priority: JobPriority;
   workerCount: number;

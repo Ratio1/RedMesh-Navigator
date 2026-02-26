@@ -170,7 +170,7 @@ export async function POST(request: Request) {
   jobsLogger.debug('Calling createJob with payload:', payload);
 
   try {
-    const job = await createJob(payload, { authToken: token, owner: body.owner });
+    const job = await createJob(payload, { authToken: token });
     jobsLogger.debug('Job created successfully:', job);
     return NextResponse.json({ job }, { status: 201 });
   } catch (error) {

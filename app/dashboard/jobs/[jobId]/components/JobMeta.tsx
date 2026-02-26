@@ -5,8 +5,10 @@ import { format } from 'date-fns';
 import Card from '@/components/ui/Card';
 import Badge from '@/components/ui/Badge';
 import CopyableText from '@/components/ui/CopyableText';
-import type { Job } from '@/lib/api/types';
+import type { Job, JobEventType } from '@/lib/api/types';
 import { RUN_MODE } from '@/lib/api/constants';
+
+const PASS_EVENT_TYPES: JobEventType[] = ['pass_completed', 'pass_started'];
 import type { WorkerActivityItem } from '../types';
 
 const DEFAULT_PORT_START = 1;
@@ -49,40 +51,21 @@ export function JobMeta({ job, workerActivity }: JobMetaProps) {
             <CopyableText text={job.initiator} className="font-semibold text-slate-100" />
           </dd>
         </div>
-        {job.owner && (
-          <div className="flex items-center justify-between gap-3">
-            <dt className="shrink-0">Owner</dt>
-            <dd className="min-w-0">
-              <CopyableText text={job.owner} className="text-slate-100" />
-            </dd>
-          </div>
-        )}
+
         <div className="flex items-center justify-between">
           <dt>Job ID</dt>
           <dd>
             <CopyableText text={job.id} className="font-mono text-xs text-slate-100" />
           </dd>
         </div>
-        <div className="flex items-center justify-between">
-          <dt>Created</dt>
-          <dd className="text-slate-100">{formatDate(job.createdAt)}</dd>
-        </div>
-        <div className="flex items-center justify-between">
-          <dt>Started</dt>
-          <dd className="text-slate-100">{formatDate(job.startedAt)}</dd>
-        </div>
-        {job.completedAt && (
-          <div className="flex items-center justify-between">
-            <dt>Completed</dt>
-            <dd className="text-slate-100">{formatDate(job.completedAt)}</dd>
+        {job.timeline
+          .filter((event) => job.runMode === RUN_MODE.CONTINUOUS || !PASS_EVENT_TYPES.includes(event.type))
+          .map((event, i) => (
+          <div key={i} className="flex items-center justify-between">
+            <dt className="shrink-0">{event.label}</dt>
+            <dd className="text-slate-100">{formatDate(event.date)}</dd>
           </div>
-        )}
-        {job.finalizedAt && (
-          <div className="flex items-center justify-between">
-            <dt>Finalized</dt>
-            <dd className="text-slate-100">{formatDate(job.finalizedAt)}</dd>
-          </div>
-        )}
+        ))}
         {job.totalDuration != null && (
           <div className="flex items-center justify-between">
             <dt>Duration</dt>
@@ -110,17 +93,19 @@ export function JobMeta({ job, workerActivity }: JobMetaProps) {
           <dt>Port Range</dt>
           <dd className="text-slate-100">{job.portRange?.start ?? DEFAULT_PORT_START} - {job.portRange?.end ?? DEFAULT_PORT_END}</dd>
         </div>
-        <div className="flex items-center justify-between">
-          <dt>Current Pass</dt>
-          <dd className="font-semibold text-emerald-400">{job.currentPass}</dd>
-        </div>
-        {job.monitorInterval && (
+        {job.runMode === RUN_MODE.CONTINUOUS && (
+          <div className="flex items-center justify-between">
+            <dt>Current Pass</dt>
+            <dd className="font-semibold text-emerald-400">{job.currentPass}</dd>
+          </div>
+        )}
+        {job.runMode === RUN_MODE.CONTINUOUS && job.monitorInterval && (
           <div className="flex items-center justify-between">
             <dt>Monitor Interval</dt>
             <dd className="text-slate-100">{job.monitorInterval}s</dd>
           </div>
         )}
-        {job.nextPassAt && (
+        {job.runMode === RUN_MODE.CONTINUOUS && job.nextPassAt && (
           <div className="flex items-center justify-between">
             <dt>Next Pass At</dt>
             <dd className="text-amber-400">{formatDate(job.nextPassAt)}</dd>

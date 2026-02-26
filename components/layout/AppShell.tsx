@@ -207,7 +207,7 @@ export default function AppShell({ children }: PropsWithChildren<{}>): JSX.Eleme
             <AppVersionBadge />
           </div>
           <div className="flex flex-wrap items-center gap-3">
-            <p className="text-slate-500">© 2025 Ratio1 RedMesh</p>
+            <p className="text-slate-500">© 2025 Ratio1.ai</p>
             <ServedByIndicator className="rounded-full border border-white/15 bg-slate-900/70 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-200" />
           </div>
         </div>

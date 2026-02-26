@@ -59,6 +59,8 @@ export function WorkerReportsHistory({ job, reports, llmAnalyses }: WorkerReport
     URL.revokeObjectURL(url);
   };
 
+  const isContinuous = job.runMode === RUN_MODE.CONTINUOUS;
+
   return (
     <Card
       title={
@@ -75,34 +77,38 @@ export function WorkerReportsHistory({ job, reports, llmAnalyses }: WorkerReport
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
           </svg>
           <span>Worker Reports</span>
-          <span className="text-xs text-slate-500 font-normal">
-            ({job.passHistory.length} pass{job.passHistory.length !== 1 ? 'es' : ''})
-          </span>
+          {isContinuous && (
+            <span className="text-xs text-slate-500 font-normal">
+              ({job.passHistory.length} pass{job.passHistory.length !== 1 ? 'es' : ''})
+            </span>
+          )}
         </button>
       }
       description={workerReportsExpanded ? "Detailed scan results from each worker node" : undefined}
     >
       {!workerReportsExpanded ? (
         <p className="text-sm text-slate-400">
-          Click to expand and view detailed reports from each pass.
+          Click to expand and view detailed reports{isContinuous ? ' from each pass' : ''}.
         </p>
       ) : (
         <div className="space-y-6">
           {job.passHistory.map((pass) => (
             <div key={pass.passNr} className="space-y-4">
-              <div className="flex items-center justify-between border-b border-white/10 pb-2">
-                <h4 className="text-sm font-semibold text-slate-100">
-                  Pass #{pass.passNr}
-                </h4>
-                <span className="text-xs text-slate-400">
-                  Completed: {formatDate(pass.completedAt)}
-                  {pass.duration != null && (
-                    <span className="ml-2 text-emerald-400">({formatDuration(pass.duration)})</span>
-                  )}
-                </span>
-              </div>
+              {isContinuous && (
+                <div className="flex items-center justify-between border-b border-white/10 pb-2">
+                  <h4 className="text-sm font-semibold text-slate-100">
+                    Pass #{pass.passNr}
+                  </h4>
+                  <span className="text-xs text-slate-400">
+                    Completed: {formatDate(pass.completedAt)}
+                    {pass.duration != null && (
+                      <span className="ml-2 text-emerald-400">({formatDuration(pass.duration)})</span>
+                    )}
+                  </span>
+                </div>
+              )}
               {/* LLM Analysis for this pass (continuous mode only — singlepass shows it at job level) */}
-              {job.runMode === RUN_MODE.CONTINUOUS && llmAnalyses && llmAnalyses[pass.passNr] && (
+              {isContinuous && llmAnalyses && llmAnalyses[pass.passNr] && (
                 <div className="mb-4">
                   <LlmAnalysisComponent
                     analysis={llmAnalyses[pass.passNr]}

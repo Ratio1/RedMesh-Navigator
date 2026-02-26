@@ -3,12 +3,13 @@
 import { ReactNode, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Job } from '@/lib/api/types';
+import { getEvent } from '@/lib/api/jobs';
 import { RUN_MODE } from '@/lib/api/constants';
 import Card from '@/components/ui/Card';
 import Badge from '@/components/ui/Badge';
 import Button from '@/components/ui/Button';
 import { InlineLoader } from '@/components/ui/Loader';
-import { formatDistanceToNow, parseISO } from 'date-fns';
+import { format, formatDistanceToNow, parseISO } from 'date-fns';
 import { useJobActions } from '@/lib/hooks/useJobActions';
 // Note: Link import removed - using programmatic navigation for loading state
 
@@ -37,30 +38,21 @@ function StatusBadge({ status }: { status: Job['status'] }): JSX.Element {
   }
 }
 
-function formatRelative(timestamp?: string): string {
+function formatTimestamp(timestamp?: string): string {
   if (!timestamp) {
     return '--';
   }
 
   try {
-    return formatDistanceToNow(parseISO(timestamp), { addSuffix: true });
+    const date = parseISO(timestamp);
+    const full = format(date, 'd MMM yyyy HH:mm');
+    const relative = formatDistanceToNow(date, { addSuffix: true });
+    return `${full} (${relative})`;
   } catch (_error) {
     return timestamp;
   }
 }
 
-function LatestEvent({ timeline }: { timeline: Job['timeline'] }): JSX.Element | null {
-  if (!timeline.length) {
-    return null;
-  }
-
-  const latest = timeline.reduce((acc, entry) => (entry.at > acc.at ? entry : acc), timeline[0]);
-  return (
-    <span className="text-xs text-slate-400">
-      Last event: {latest.label} ({formatRelative(latest.at)})
-    </span>
-  );
-}
 
 function computeCompletion(job: Job): number {
   if (job.status === 'completed' || job.status === 'stopped') {
@@ -153,12 +145,19 @@ export default function JobList({
                 <span>Target: {job.target}</span>
                 <span>Ports: {job.portRange.start}-{job.portRange.end}</span>
                 <span>Initiator: {job.initiator}</span>
-                {job.owner && <span>Owner: {job.owner}</span>}
-                <span>Created {formatRelative(job.createdAt)}</span>
-                {job.startedAt && <span>Started {formatRelative(job.startedAt)}</span>}
-                {job.completedAt && <span>Completed {formatRelative(job.completedAt)}</span>}
+
+                <span>
+                  {(() => {
+                    const finished = getEvent(job.timeline, 'finalized') ?? getEvent(job.timeline, 'stopped');
+                    const started = getEvent(job.timeline, 'started');
+                    const created = getEvent(job.timeline, 'created');
+                    const displayEvent = finished ?? started ?? created;
+                    return displayEvent
+                      ? `${displayEvent.label} ${formatTimestamp(displayEvent.date)}`
+                      : '--';
+                  })()}
+                </span>
               </div>
-              <LatestEvent timeline={job.timeline} />
               {job.aggregate && job.aggregate.openPorts.length > 0 && (
                 <div className="rounded-xl border border-brand-primary/25 bg-brand-primary/10 p-4 text-xs text-slate-100">
                   <p className="text-sm font-semibold text-brand-primary">Aggregate findings</p>

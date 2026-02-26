@@ -3,6 +3,7 @@ import {
   AuthSuccess,
   CreateJobInput,
   Job,
+  JobEventType,
   JobStatus,
   JobTimelineEntry,
   JobWorkerStatus
@@ -80,12 +81,15 @@ function buildWorker(
   };
 }
 
-function buildTimeline(entries: Array<{ label: string; at: Date }>): JobTimelineEntry[] {
+function buildTimeline(entries: Array<{ type: JobEventType; label: string; at: Date; actor?: string }>): JobTimelineEntry[] {
   return entries
     .sort((a, b) => a.at.getTime() - b.at.getTime())
-    .map(({ label, at }) => ({
+    .map(({ type, label, at, actor }) => ({
+      type,
       label,
-      at: at.toISOString()
+      date: at.toISOString(),
+      actor: actor ?? 'mock-node',
+      actorType: 'node' as const,
     }));
 }
 
@@ -115,9 +119,10 @@ function buildJob(partial?: Partial<Job>): Job {
   };
 
   const timeline = buildTimeline([
-    { label: 'Job created', at: new Date(now.getTime() - 1000 * 60 * 40) },
-    { label: 'Dispatch issued to workers', at: started },
-    { label: 'Aggregated report published', at: completed }
+    { type: 'created', label: 'Job created', at: new Date(now.getTime() - 1000 * 60 * 40) },
+    { type: 'started', label: 'Scan started on mock-node', at: started },
+    { type: 'completed', label: 'Scan completed on mock-node', at: completed },
+    { type: 'finalized', label: 'Job finalized', at: completed }
   ]);
 
   const job: Job = {
@@ -127,11 +132,7 @@ function buildJob(partial?: Partial<Job>): Job {
     initiator: 'ratio1-admin',
     status: JOB_STATUS.COMPLETED,
     summary: 'Reconnaissance sweep across the internal perimeter VLAN.',
-    createdAt: new Date(now.getTime() - 1000 * 60 * 45).toISOString(),
-    updatedAt: completed.toISOString(),
-    startedAt: started.toISOString(),
-    completedAt: completed.toISOString(),
-    owner: 'security-team',
+
     payloadUri: 'r1fs://perimeter/recon-batch-12.json',
     priority: 'medium',
     workerCount: workers.length,
@@ -168,10 +169,6 @@ const INITIAL_JOBS: Job[] = [
     target: '172.19.20.5',
     status: 'stopped',
     summary: 'Simulated breach drill across finance subnet to validate containment.',
-    createdAt: new Date(Date.now() - 1000 * 60 * 25).toISOString(),
-    updatedAt: new Date().toISOString(),
-    startedAt: new Date(Date.now() - 1000 * 60 * 20).toISOString(),
-    completedAt: new Date().toISOString(),
     priority: 'high',
     workers: [
       buildWorker('F1', 1, 2000, true),
@@ -185,9 +182,9 @@ const INITIAL_JOBS: Job[] = [
     aggregate: undefined,
     lastError: 'Breach drill blocked by perimeter firewall during sweep.',
     timeline: buildTimeline([
-      { label: 'Job created', at: new Date(Date.now() - 1000 * 60 * 25) },
-      { label: 'Dispatch issued to workers', at: new Date(Date.now() - 1000 * 60 * 20) },
-      { label: 'Job stopped', at: new Date() }
+      { type: 'created', label: 'Job created', at: new Date(Date.now() - 1000 * 60 * 25) },
+      { type: 'started', label: 'Scan started on mock-node', at: new Date(Date.now() - 1000 * 60 * 20) },
+      { type: 'stopped', label: 'Job stopped', at: new Date() }
     ]),
     distribution: 'mirror',
     duration: DURATION.CONTINUOUS,
@@ -200,10 +197,6 @@ const INITIAL_JOBS: Job[] = [
     target: 'self',
     status: JOB_STATUS.COMPLETED,
     summary: 'Queued diagnostic bundle for the Worker App Runner plugin.',
-    createdAt: new Date(Date.now() - 1000 * 60 * 5).toISOString(),
-    updatedAt: new Date().toISOString(),
-    startedAt: new Date(Date.now() - 1000 * 60 * 4).toISOString(),
-    completedAt: new Date().toISOString(),
     priority: 'low',
     workers: [buildWorker('H3', 1, 1024, true, { openPorts: [22, 161] })],
     aggregate: {
@@ -213,8 +206,8 @@ const INITIAL_JOBS: Job[] = [
     },
     featureSet: ['service_info_common'],
     timeline: buildTimeline([
-      { label: 'Job created', at: new Date(Date.now() - 1000 * 60 * 5) },
-      { label: 'Diagnostics collected', at: new Date() }
+      { type: 'created', label: 'Job created', at: new Date(Date.now() - 1000 * 60 * 5) },
+      { type: 'completed', label: 'Diagnostics collected', at: new Date() }
     ]),
     duration: DURATION.SINGLEPASS,
     distribution: 'slice',
@@ -227,9 +220,6 @@ const INITIAL_JOBS: Job[] = [
     target: '10.42.0.0/24',
     status: JOB_STATUS.COMPLETED,
     summary: 'Coverage sweep across LATAM satellite nodes.',
-    createdAt: new Date(Date.now() - 1000 * 60 * 120).toISOString(),
-    startedAt: new Date(Date.now() - 1000 * 60 * 110).toISOString(),
-    completedAt: new Date(Date.now() - 1000 * 60 * 70).toISOString(),
     priority: 'medium',
     workers: [buildWorker('LAT1', 1, 2048, true, { openPorts: [53, 8080] })],
     workerCount: 1,
@@ -248,10 +238,6 @@ const INITIAL_JOBS: Job[] = [
     target: 'eu.mesh.ratio1',
     status: JOB_STATUS.COMPLETED,
     summary: 'Load test across EU edge nodes to benchmark concurrency.',
-    createdAt: new Date(Date.now() - 1000 * 60 * 50).toISOString(),
-    updatedAt: new Date().toISOString(),
-    startedAt: new Date(Date.now() - 1000 * 60 * 45).toISOString(),
-    completedAt: new Date(Date.now() - 1000 * 60 * 5).toISOString(),
     priority: 'medium',
     workers: [
       buildWorker('EU1', 1, 1500, true, { openPorts: [443, 9443] }),
@@ -271,9 +257,9 @@ const INITIAL_JOBS: Job[] = [
       }
     },
     timeline: buildTimeline([
-      { label: 'Job created', at: new Date(Date.now() - 1000 * 60 * 50) },
-      { label: 'Dispatch issued to workers', at: new Date(Date.now() - 1000 * 60 * 45) },
-      { label: 'Load test completed', at: new Date(Date.now() - 1000 * 60 * 5) }
+      { type: 'created', label: 'Job created', at: new Date(Date.now() - 1000 * 60 * 50) },
+      { type: 'started', label: 'Scan started on mock-node', at: new Date(Date.now() - 1000 * 60 * 45) },
+      { type: 'completed', label: 'Load test completed', at: new Date(Date.now() - 1000 * 60 * 5) }
     ])
   }),
   buildJob({
@@ -282,9 +268,6 @@ const INITIAL_JOBS: Job[] = [
     target: 'ro.mesh.ratio1',
     status: 'stopped',
     summary: 'TLS posture audit across Romanian edge nodes.',
-    createdAt: new Date(Date.now() - 1000 * 60 * 80).toISOString(),
-    startedAt: new Date(Date.now() - 1000 * 60 * 70).toISOString(),
-    completedAt: new Date(Date.now() - 1000 * 60 * 60).toISOString(),
     priority: 'high',
     workers: [
       buildWorker('RO1', 1, 1024, true, { openPorts: [443] }),
@@ -294,9 +277,9 @@ const INITIAL_JOBS: Job[] = [
     aggregate: undefined,
     lastError: 'Worker timeout on RO2',
     timeline: buildTimeline([
-      { label: 'Job created', at: new Date(Date.now() - 1000 * 60 * 80) },
-      { label: 'Dispatch issued to workers', at: new Date(Date.now() - 1000 * 60 * 70) },
-      { label: 'Job stopped', at: new Date(Date.now() - 1000 * 60 * 60) }
+      { type: 'created', label: 'Job created', at: new Date(Date.now() - 1000 * 60 * 80) },
+      { type: 'started', label: 'Scan started on mock-node', at: new Date(Date.now() - 1000 * 60 * 70) },
+      { type: 'stopped', label: 'Job stopped', at: new Date(Date.now() - 1000 * 60 * 60) }
     ])
   }),
   buildJob({
@@ -305,9 +288,6 @@ const INITIAL_JOBS: Job[] = [
     target: 'apac.mesh.ratio1',
     status: 'stopped',
     summary: 'APAC incident response simulation with controlled stop.',
-    createdAt: new Date(Date.now() - 1000 * 60 * 140).toISOString(),
-    startedAt: new Date(Date.now() - 1000 * 60 * 135).toISOString(),
-    completedAt: new Date(Date.now() - 1000 * 60 * 130).toISOString(),
     priority: 'critical',
     workers: [
       buildWorker('AP1', 1, 1024, true, { openPorts: [22, 443] }),
@@ -317,27 +297,27 @@ const INITIAL_JOBS: Job[] = [
     aggregate: undefined,
     lastError: 'Response window exceeded for forensic copy',
     timeline: buildTimeline([
-      { label: 'Job created', at: new Date(Date.now() - 1000 * 60 * 140) },
-      { label: 'Dispatch issued to workers', at: new Date(Date.now() - 1000 * 60 * 135) },
-      { label: 'Job stopped', at: new Date(Date.now() - 1000 * 60 * 130) }
+      { type: 'created', label: 'Job created', at: new Date(Date.now() - 1000 * 60 * 140) },
+      { type: 'started', label: 'Scan started on mock-node', at: new Date(Date.now() - 1000 * 60 * 135) },
+      { type: 'stopped', label: 'Job stopped', at: new Date(Date.now() - 1000 * 60 * 130) }
     ])
   })
 ];
 
 let mutableJobs = [...INITIAL_JOBS];
 
-function computeTimelineEntry(status: JobStatus): string {
+function computeTimelineEvent(status: JobStatus): { type: JobEventType; label: string } {
   switch (status) {
     case JOB_STATUS.RUNNING:
-      return 'Workers executing';
+      return { type: 'started', label: 'Workers executing' };
     case JOB_STATUS.STOPPING:
-      return 'Job stopping';
+      return { type: 'scheduled_for_stop', label: 'Job stopping' };
     case JOB_STATUS.STOPPED:
-      return 'Job stopped';
+      return { type: 'stopped', label: 'Job stopped' };
     case JOB_STATUS.COMPLETED:
-      return 'Job completed';
+      return { type: 'completed', label: 'Job completed' };
     default:
-      return 'Status updated';
+      return { type: 'created', label: 'Status updated' };
   }
 }
 
@@ -345,21 +325,16 @@ export function getMockJobs(): Job[] {
   return [...mutableJobs];
 }
 
-export function createMockJob(input: CreateJobInput, owner?: string): Job {
+export function createMockJob(input: CreateJobInput): Job {
   const now = new Date();
   const duration = input.duration ?? DURATION.SINGLEPASS;
   const job: Job = {
     id: randomUUID(),
     displayName: input.name,
     target: input.target,
-    initiator: owner ?? 'operator',
+    initiator: 'operator',
     status: JOB_STATUS.RUNNING,
     summary: input.summary,
-    createdAt: now.toISOString(),
-    updatedAt: now.toISOString(),
-    startedAt: undefined,
-    completedAt: undefined,
-    owner,
     payloadUri: input.payloadUri,
     priority: input.priority ?? 'medium',
     workerCount: input.workerCount ?? 1,
@@ -368,7 +343,7 @@ export function createMockJob(input: CreateJobInput, owner?: string): Job {
     excludedFeatures: [],
     workers: [],
     aggregate: undefined,
-    timeline: buildTimeline([{ label: 'Job created', at: now }]),
+    timeline: buildTimeline([{ type: 'created', label: 'Job created', at: now }]),
     lastError: undefined,
     distribution: input.distribution ?? 'slice',
     duration,
@@ -391,30 +366,21 @@ export function transitionMockJob(id: string, status: JobStatus): void {
     }
 
     const now = new Date();
+    const event = computeTimelineEvent(status);
     const updates: Partial<Job> = {
       status,
-      updatedAt: now.toISOString(),
       timeline: buildTimeline([
-        ...job.timeline.map((entry) => ({ label: entry.label, at: new Date(entry.at) })),
-        { label: computeTimelineEntry(status), at: now }
+        ...job.timeline.map((entry) => ({ type: entry.type, label: entry.label, at: new Date(entry.date) })),
+        { type: event.type, label: event.label, at: now }
       ])
     };
 
-    if (status === JOB_STATUS.RUNNING && !job.startedAt) {
-      updates.startedAt = now.toISOString();
-    }
-
     if (status === JOB_STATUS.COMPLETED) {
-      updates.completedAt = now.toISOString();
       updates.aggregate = job.aggregate ?? {
         openPorts: [80, 443],
         serviceSummary: { http: 'nginx 1.24.0', tls: 'TLSv1.3' },
         webFindings: {}
       };
-    }
-
-    if (status === 'stopped') {
-      updates.completedAt = now.toISOString();
     }
 
     return {
