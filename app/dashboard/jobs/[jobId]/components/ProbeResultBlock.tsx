@@ -15,6 +15,14 @@ interface ProbeResultBlockProps {
   compact?: boolean;
 }
 
+export const SEVERITY_RANK: Record<ParsedFinding['severity'], number> = {
+  CRITICAL: 0,
+  HIGH: 1,
+  MEDIUM: 2,
+  LOW: 3,
+  INFO: 4,
+};
+
 const SEVERITY_PILL: Record<ParsedFinding['severity'], string> = {
   CRITICAL: 'bg-red-500/20 text-red-400 border border-red-500/40',
   HIGH: 'bg-orange-500/20 text-orange-400 border border-orange-500/40',
@@ -100,10 +108,10 @@ export function ProbeResultBlock({
 
   const maxCollapsedLines = 4;
 
-  // Split findings into cards (CRITICAL/HIGH/MEDIUM) vs inline (LOW/INFO)
-  const cardFindings = normalized.findings.filter(
-    (f) => f.severity === 'CRITICAL' || f.severity === 'HIGH' || f.severity === 'MEDIUM'
-  );
+  // Split findings into cards (CRITICAL/HIGH/MEDIUM) vs inline (LOW/INFO), sorted by severity
+  const cardFindings = normalized.findings
+    .filter((f) => f.severity === 'CRITICAL' || f.severity === 'HIGH' || f.severity === 'MEDIUM')
+    .sort((a, b) => SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity]);
   const inlineFindings = normalized.findings.filter(
     (f) => f.severity === 'LOW' || f.severity === 'INFO'
   );

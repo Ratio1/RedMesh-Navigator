@@ -3,8 +3,22 @@
 import { useState } from 'react';
 import Card from '@/components/ui/Card';
 import Button from '@/components/ui/Button';
-import { ProbeResultBlock } from './ProbeResultBlock';
+import { ProbeResultBlock, SEVERITY_RANK } from './ProbeResultBlock';
+import { normalizeProbeResult } from '@/lib/utils/probeResult';
+import type { ParsedFinding } from '@/lib/utils/probeResult';
 import type { AggregatedPortsData } from '../types';
+
+/** Return the highest (lowest-rank) severity across all findings in a probe result. */
+function topSeverity(result: unknown): number {
+  const { findings } = normalizeProbeResult(result);
+  if (findings.length === 0) return SEVERITY_RANK.INFO;
+  return Math.min(...findings.map((f) => SEVERITY_RANK[f.severity] ?? SEVERITY_RANK.INFO));
+}
+
+/** Sort probe entries so highest-severity probes come first. */
+function sortByTopSeverity(entries: [string, unknown][]): [string, unknown][] {
+  return [...entries].sort((a, b) => topSeverity(a[1]) - topSeverity(b[1]));
+}
 
 interface DiscoveredPortsProps {
   aggregatedPorts: AggregatedPortsData;
@@ -91,7 +105,7 @@ export function DiscoveredPorts({ aggregatedPorts }: DiscoveredPortsProps) {
                       Service Detection Results
                     </p>
                     <div className="space-y-2">
-                      {Object.entries(aggregatedPorts.services.get(selectedPort) as Record<string, unknown>).map(([probeName, result]) => {
+                      {sortByTopSeverity(Object.entries(aggregatedPorts.services.get(selectedPort) as Record<string, unknown>)).map(([probeName, result]) => {
                         const resultKey = `service-${selectedPort}-${probeName}`;
                         return (
                           <ProbeResultBlock
@@ -125,7 +139,7 @@ export function DiscoveredPorts({ aggregatedPorts }: DiscoveredPortsProps) {
                       Web Security Tests
                     </p>
                     <div className="space-y-2">
-                      {Object.entries(aggregatedPorts.webTests.get(selectedPort) as Record<string, unknown>).map(([testName, result]) => {
+                      {sortByTopSeverity(Object.entries(aggregatedPorts.webTests.get(selectedPort) as Record<string, unknown>)).map(([testName, result]) => {
                         const resultKey = `web-${selectedPort}-${testName}`;
                         return (
                           <ProbeResultBlock
