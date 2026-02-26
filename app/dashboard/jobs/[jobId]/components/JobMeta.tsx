@@ -1,6 +1,5 @@
 'use client';
 
-import { useState } from 'react';
 import { format } from 'date-fns';
 import Card from '@/components/ui/Card';
 import Badge from '@/components/ui/Badge';
@@ -39,8 +38,6 @@ interface JobMetaProps {
 }
 
 export function JobMeta({ job, workerActivity }: JobMetaProps) {
-  const [expandedFeatures, setExpandedFeatures] = useState(false);
-
   return (
     <Card title="Meta" description="Operational metadata and ownership">
       <dl className="space-y-3 text-sm text-slate-300">
@@ -113,33 +110,6 @@ export function JobMeta({ job, workerActivity }: JobMetaProps) {
           <dd className="text-slate-100">{workerActivity.length || job.workerCount}</dd>
         </div>
       </dl>
-
-      {/* Enabled Features */}
-      {job.featureSet && job.featureSet.length > 0 && (
-        <div className="mt-4 pt-4 border-t border-white/10">
-          <p className="text-xs uppercase tracking-widest text-slate-400 mb-2">
-            Enabled Features ({job.featureSet.length})
-          </p>
-          <div className="flex flex-wrap gap-1">
-            {(expandedFeatures ? job.featureSet : job.featureSet.slice(0, 10)).map((feature) => (
-              <span
-                key={feature}
-                className="rounded bg-emerald-900/30 border border-emerald-500/30 px-2 py-0.5 text-xs text-emerald-300"
-              >
-                {feature.replace(/^_/, '').replace(/_/g, ' ')}
-              </span>
-            ))}
-            {job.featureSet.length > 10 && (
-              <button
-                onClick={() => setExpandedFeatures(!expandedFeatures)}
-                className="text-xs text-emerald-400 hover:text-emerald-300 hover:underline cursor-pointer transition-colors"
-              >
-                {expandedFeatures ? 'Show less' : `+${job.featureSet.length - 10} more`}
-              </button>
-            )}
-          </div>
-        </div>
-      )}
     </Card>
   );
 }

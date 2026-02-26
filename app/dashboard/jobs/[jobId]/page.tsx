@@ -22,6 +22,7 @@ import {
   DiscoveredPorts,
   WorkerActivityTable,
   JobTimeline,
+  EnabledFeatures,
   DetailedWorkerReports,
   WorkerReportsHistory,
   LlmAnalysis,
@@ -170,7 +171,10 @@ export default function JobDetailsPage(): JSX.Element {
           <JobMeta job={job} workerActivity={workerActivity} />
         </section>
 
-        <JobTimeline timeline={job.timeline} />
+        <section className="grid gap-6 lg:grid-cols-2">
+          <JobTimeline timeline={job.timeline} />
+          <EnabledFeatures features={job.featureSet ?? []} />
+        </section>
 
         <Card
           title="Download report"
