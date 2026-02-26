@@ -5,10 +5,9 @@ import { format } from 'date-fns';
 import Card from '@/components/ui/Card';
 import Badge from '@/components/ui/Badge';
 import CopyableText from '@/components/ui/CopyableText';
-import type { Job, JobEventType } from '@/lib/api/types';
+import type { Job } from '@/lib/api/types';
 import { RUN_MODE } from '@/lib/api/constants';
 
-const PASS_EVENT_TYPES: JobEventType[] = ['pass_completed', 'pass_started'];
 import type { WorkerActivityItem } from '../types';
 
 const DEFAULT_PORT_START = 1;
@@ -58,14 +57,6 @@ export function JobMeta({ job, workerActivity }: JobMetaProps) {
             <CopyableText text={job.id} className="font-mono text-xs text-slate-100" />
           </dd>
         </div>
-        {job.timeline
-          .filter((event) => job.runMode === RUN_MODE.CONTINUOUS || !PASS_EVENT_TYPES.includes(event.type))
-          .map((event, i) => (
-          <div key={i} className="flex items-center justify-between">
-            <dt className="shrink-0">{event.label}</dt>
-            <dd className="text-slate-100">{formatDate(event.date)}</dd>
-          </div>
-        ))}
         {job.totalDuration != null && (
           <div className="flex items-center justify-between">
             <dt>Duration</dt>

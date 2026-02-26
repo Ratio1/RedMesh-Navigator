@@ -170,25 +170,7 @@ export default function JobDetailsPage(): JSX.Element {
           <JobMeta job={job} workerActivity={workerActivity} />
         </section>
 
-        {/* LLM Analysis for singlepass jobs - show above discovered ports */}
-        {job.runMode === 'singlepass' && llmAnalyses[1] && (
-          <section>
-            <LlmAnalysis analysis={llmAnalyses[1]} />
-          </section>
-        )}
-
-        <section>
-          <DiscoveredPorts aggregatedPorts={aggregatedPorts} />
-        </section>
-
-        <section className="grid gap-6 lg:grid-cols-2">
-          <WorkerActivityTable workerActivity={workerActivity} />
-          <JobTimeline timeline={job.timeline} />
-        </section>
-
-        <DetailedWorkerReports reports={reports} job={job} />
-
-        <WorkerReportsHistory job={job} reports={reports} llmAnalyses={llmAnalyses} />
+        <JobTimeline timeline={job.timeline} />
 
         <Card
           title="Download report"
@@ -203,6 +185,22 @@ export default function JobDetailsPage(): JSX.Element {
             Download a summary of this task including timeline, worker activity, and aggregate findings.
           </p>
         </Card>
+
+        <section>
+          <DiscoveredPorts aggregatedPorts={aggregatedPorts} />
+        </section>
+
+        {job.runMode === 'singlepass' && llmAnalyses[1] && (
+          <section>
+            <LlmAnalysis analysis={llmAnalyses[1]} />
+          </section>
+        )}
+
+        <WorkerActivityTable workerActivity={workerActivity} />
+
+        <DetailedWorkerReports reports={reports} job={job} />
+
+        <WorkerReportsHistory job={job} reports={reports} llmAnalyses={llmAnalyses} />
       </div>
     </AppShell>
   );
