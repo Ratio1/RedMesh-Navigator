@@ -1,8 +1,9 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useMemo, useRef, useCallback } from 'react';
 import Card from '@/components/ui/Card';
 import Button from '@/components/ui/Button';
+import Input from '@/components/ui/Input';
 import { ProbeResultBlock, SEVERITY_RANK } from './ProbeResultBlock';
 import { normalizeProbeResult } from '@/lib/utils/probeResult';
 import type { ParsedFinding } from '@/lib/utils/probeResult';
@@ -20,6 +21,39 @@ function sortByTopSeverity(entries: [string, unknown][]): [string, unknown][] {
   return [...entries].sort((a, b) => topSeverity(a[1]) - topSeverity(b[1]));
 }
 
+const SEVERITY_LEVELS: ParsedFinding['severity'][] = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW', 'INFO'];
+
+const SEVERITY_DOT: Record<string, string> = {
+  CRITICAL: 'bg-red-500',
+  HIGH: 'bg-orange-500',
+  MEDIUM: 'bg-yellow-500',
+  LOW: 'bg-blue-400',
+  INFO: 'bg-slate-500',
+};
+
+const SEVERITY_BUTTON_STYLES: Record<string, { active: string; inactive: string }> = {
+  CRITICAL: {
+    active: 'bg-red-500/20 text-red-300 border-red-500/60',
+    inactive: 'bg-slate-800/50 text-slate-400 border-slate-600 hover:border-red-500/40 hover:text-red-300',
+  },
+  HIGH: {
+    active: 'bg-orange-500/20 text-orange-300 border-orange-500/60',
+    inactive: 'bg-slate-800/50 text-slate-400 border-slate-600 hover:border-orange-500/40 hover:text-orange-300',
+  },
+  MEDIUM: {
+    active: 'bg-yellow-500/20 text-yellow-300 border-yellow-500/60',
+    inactive: 'bg-slate-800/50 text-slate-400 border-slate-600 hover:border-yellow-500/40 hover:text-yellow-300',
+  },
+  LOW: {
+    active: 'bg-blue-400/20 text-blue-300 border-blue-400/60',
+    inactive: 'bg-slate-800/50 text-slate-400 border-slate-600 hover:border-blue-400/40 hover:text-blue-300',
+  },
+  INFO: {
+    active: 'bg-slate-500/20 text-slate-300 border-slate-400/60',
+    inactive: 'bg-slate-800/50 text-slate-400 border-slate-600 hover:border-slate-400/40 hover:text-slate-300',
+  },
+};
+
 interface DiscoveredPortsProps {
   aggregatedPorts: AggregatedPortsData;
 }
@@ -28,6 +62,128 @@ export function DiscoveredPorts({ aggregatedPorts }: DiscoveredPortsProps) {
   const [selectedPort, setSelectedPort] = useState<number | null>(null);
   const [portsExpanded, setPortsExpanded] = useState(false);
   const [expandedResults, setExpandedResults] = useState<Set<string>>(new Set());
+  const [searchQuery, setSearchQuery] = useState('');
+  const [severityFilter, setSeverityFilter] = useState<Set<string>>(new Set());
+  const [categoryFilter, setCategoryFilter] = useState<Set<string>>(new Set());
+
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
+  // Map each port to its highest severity across all probes + web tests
+  const portSeverityMap = useMemo(() => {
+    const map = new Map<number, string>();
+    for (const port of aggregatedPorts.ports) {
+      let best = SEVERITY_RANK.INFO;
+      const svc = aggregatedPorts.services.get(port);
+      if (svc) {
+        for (const result of Object.values(svc)) {
+          best = Math.min(best, topSeverity(result));
+        }
+      }
+      const web = aggregatedPorts.webTests.get(port);
+      if (web) {
+        for (const result of Object.values(web)) {
+          best = Math.min(best, topSeverity(result));
+        }
+      }
+      const label = Object.entries(SEVERITY_RANK).find(([, v]) => v === best)?.[0] ?? 'INFO';
+      map.set(port, label);
+    }
+    return map;
+  }, [aggregatedPorts]);
+
+  // Severity counts for filter badges
+  const severityCounts = useMemo(() => {
+    const counts: Record<string, number> = { CRITICAL: 0, HIGH: 0, MEDIUM: 0, LOW: 0, INFO: 0 };
+    for (const sev of portSeverityMap.values()) counts[sev]++;
+    return counts;
+  }, [portSeverityMap]);
+
+  // Category counts
+  const categoryCounts = useMemo(() => {
+    let services = 0;
+    let web = 0;
+    let nodata = 0;
+    for (const port of aggregatedPorts.ports) {
+      const hasService = aggregatedPorts.services.has(port);
+      const hasWeb = aggregatedPorts.webTests.has(port);
+      if (hasService) services++;
+      if (hasWeb) web++;
+      if (!hasService && !hasWeb) nodata++;
+    }
+    return { services, web, nodata };
+  }, [aggregatedPorts]);
+
+  // Filtered ports
+  const filteredPorts = useMemo(() => {
+    return aggregatedPorts.ports.filter((port) => {
+      if (searchQuery && !String(port).includes(searchQuery)) return false;
+      if (severityFilter.size > 0) {
+        const sev = portSeverityMap.get(port) ?? 'INFO';
+        if (!severityFilter.has(sev)) return false;
+      }
+      if (categoryFilter.size > 0) {
+        const hasService = aggregatedPorts.services.has(port);
+        const hasWeb = aggregatedPorts.webTests.has(port);
+        const hasData = hasService || hasWeb;
+        const match =
+          (categoryFilter.has('services') && hasService) ||
+          (categoryFilter.has('web') && hasWeb) ||
+          (categoryFilter.has('nodata') && !hasData);
+        if (!match) return false;
+      }
+      return true;
+    });
+  }, [aggregatedPorts, searchQuery, severityFilter, categoryFilter, portSeverityMap]);
+
+  const isFiltered = searchQuery || severityFilter.size > 0 || categoryFilter.size > 0;
+
+  const toggleSeverity = useCallback((sev: string) => {
+    setSeverityFilter((prev) => {
+      const next = new Set(prev);
+      if (next.has(sev)) {
+        next.delete(sev);
+      } else {
+        next.add(sev);
+      }
+      return next;
+    });
+  }, []);
+
+  const toggleCategory = useCallback((cat: string) => {
+    setCategoryFilter((prev) => {
+      const next = new Set(prev);
+      if (next.has(cat)) {
+        next.delete(cat);
+      } else {
+        next.add(cat);
+      }
+      return next;
+    });
+  }, []);
+
+  const clearAllFilters = useCallback(() => {
+    setSearchQuery('');
+    setSeverityFilter(new Set());
+    setCategoryFilter(new Set());
+  }, []);
+
+  const handleSearchKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLInputElement>) => {
+      if (e.key === 'Enter') {
+        if (filteredPorts.length > 0) {
+          setSelectedPort(filteredPorts[0]);
+        }
+      } else if (e.key === 'Escape') {
+        setSearchQuery('');
+        searchInputRef.current?.blur();
+      }
+    },
+    [filteredPorts],
+  );
+
+  // Ports to display (with expand/collapse for large lists)
+  const displayedPorts =
+    filteredPorts.length > 100 && !portsExpanded ? filteredPorts.slice(0, 50) : filteredPorts;
 
   return (
     <Card
@@ -39,20 +195,140 @@ export function DiscoveredPorts({ aggregatedPorts }: DiscoveredPortsProps) {
         <p className="text-sm text-slate-400">No open ports discovered yet.</p>
       ) : (
         <div className="space-y-4">
-          {/* Port Pills - Red and Clickable */}
+          {/* Search Bar */}
+          <div className="relative">
+            <Input
+              ref={searchInputRef}
+              type="text"
+              placeholder="Search ports..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              onKeyDown={handleSearchKeyDown}
+              className="pr-9 !py-2"
+            />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery('')}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200 transition-colors"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            )}
+          </div>
+
+          {/* Severity Filter Buttons */}
+          <div className="space-y-2">
+            <div className="flex items-center flex-wrap gap-1.5">
+              <span className="text-xs text-slate-500 uppercase tracking-wider mr-1">Severity</span>
+              {SEVERITY_LEVELS.map((sev) => {
+                const isActive = severityFilter.has(sev);
+                const styles = SEVERITY_BUTTON_STYLES[sev];
+                return (
+                  <button
+                    key={sev}
+                    onClick={() => toggleSeverity(sev)}
+                    className={`inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium transition-all cursor-pointer ${
+                      isActive ? styles.active : styles.inactive
+                    }`}
+                  >
+                    {sev}
+                    <span className={`text-[10px] ${isActive ? 'opacity-80' : 'opacity-50'}`}>
+                      ({severityCounts[sev]})
+                    </span>
+                  </button>
+                );
+              })}
+              {severityFilter.size > 0 && (
+                <button
+                  onClick={() => setSeverityFilter(new Set())}
+                  className="text-xs text-slate-500 hover:text-slate-300 ml-1 transition-colors"
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+
+            {/* Category Filter Buttons */}
+            <div className="flex items-center flex-wrap gap-1.5">
+              <span className="text-xs text-slate-500 uppercase tracking-wider mr-1">Category</span>
+              {([
+                { key: 'services', label: 'Has Services', count: categoryCounts.services },
+                { key: 'web', label: 'Has Web Tests', count: categoryCounts.web },
+                { key: 'nodata', label: 'No Data', count: categoryCounts.nodata },
+              ] as const).map(({ key, label, count }) => {
+                const isActive = categoryFilter.has(key);
+                return (
+                  <button
+                    key={key}
+                    onClick={() => toggleCategory(key)}
+                    className={`inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium transition-all cursor-pointer ${
+                      isActive
+                        ? 'bg-brand-primary/20 text-brand-primary border-brand-primary/50'
+                        : 'bg-slate-800/50 text-slate-400 border-slate-600 hover:border-brand-primary/40 hover:text-slate-300'
+                    }`}
+                  >
+                    {label}
+                    <span className={`text-[10px] ${isActive ? 'opacity-80' : 'opacity-50'}`}>
+                      ({count})
+                    </span>
+                  </button>
+                );
+              })}
+              {categoryFilter.size > 0 && (
+                <button
+                  onClick={() => setCategoryFilter(new Set())}
+                  className="text-xs text-slate-500 hover:text-slate-300 ml-1 transition-colors"
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Summary Stats Bar */}
+          {isFiltered && (
+            <div className="flex items-center gap-3 text-sm">
+              <span className="text-slate-300">
+                Showing <span className="font-semibold text-slate-100">{filteredPorts.length}</span>{' '}
+                of <span className="font-semibold text-slate-100">{aggregatedPorts.ports.length}</span> ports
+              </span>
+              <div className="flex items-center gap-1.5">
+                {SEVERITY_LEVELS.map((sev) => {
+                  const count = filteredPorts.filter((p) => portSeverityMap.get(p) === sev).length;
+                  if (count === 0) return null;
+                  return (
+                    <span
+                      key={sev}
+                      className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ${SEVERITY_DOT[sev]} text-white`}
+                    >
+                      {count}
+                    </span>
+                  );
+                })}
+              </div>
+              <button
+                onClick={clearAllFilters}
+                className="text-xs text-slate-500 hover:text-slate-300 transition-colors ml-auto"
+              >
+                Clear all filters
+              </button>
+            </div>
+          )}
+
+          {/* Port Pills */}
           <div className="flex flex-wrap gap-2">
-            {(aggregatedPorts.ports.length > 100 && !portsExpanded
-              ? aggregatedPorts.ports.slice(0, 50)
-              : aggregatedPorts.ports
-            ).map((port) => {
+            {displayedPorts.map((port) => {
               const hasService = aggregatedPorts.services.has(port);
               const hasWebTests = aggregatedPorts.webTests.has(port);
               const isSelected = selectedPort === port;
+              const sev = portSeverityMap.get(port) ?? 'INFO';
               return (
                 <button
                   key={port}
                   onClick={() => setSelectedPort(isSelected ? null : port)}
-                  className={`inline-flex items-center justify-center rounded-full px-3 py-1.5 text-sm font-medium transition-all cursor-pointer ${
+                  className={`inline-flex items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium transition-all cursor-pointer ${
                     isSelected
                       ? 'bg-brand-primary text-white ring-2 ring-brand-primary ring-offset-2 ring-offset-slate-900'
                       : hasService || hasWebTests
@@ -60,23 +336,27 @@ export function DiscoveredPorts({ aggregatedPorts }: DiscoveredPortsProps) {
                       : 'bg-slate-700/50 text-slate-300 border border-slate-600 hover:bg-slate-700'
                   }`}
                 >
+                  <span className={`inline-block w-2 h-2 rounded-full ${SEVERITY_DOT[sev]} shrink-0`} />
                   {port}
                 </button>
               );
             })}
-            {aggregatedPorts.ports.length > 100 && !portsExpanded && (
+            {filteredPorts.length > 100 && !portsExpanded && (
               <span className="inline-flex items-center text-sm text-slate-400">
-                +{aggregatedPorts.ports.length - 50} more
+                +{filteredPorts.length - 50} more
               </span>
             )}
+            {filteredPorts.length === 0 && (
+              <p className="text-sm text-slate-400">No ports match the current filters.</p>
+            )}
           </div>
-          {aggregatedPorts.ports.length > 100 && (
+          {filteredPorts.length > 100 && (
             <Button
               variant="secondary"
               size="sm"
               onClick={() => setPortsExpanded(!portsExpanded)}
             >
-              {portsExpanded ? 'Show Less' : `Show All ${aggregatedPorts.ports.length} Ports`}
+              {portsExpanded ? 'Show Less' : `Show All ${filteredPorts.length} Ports`}
             </Button>
           )}
 
