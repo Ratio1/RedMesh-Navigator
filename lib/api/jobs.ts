@@ -327,7 +327,8 @@ function normalizeJobFromSpecs(specs: JobSpecs): Job {
         : new Date().toISOString(),
       duration: entry.duration ?? undefined,
       reports: entry.reports,
-      llmAnalysisCid: entry.llm_analysis_cid
+      llmAnalysisCid: entry.llm_analysis_cid,
+      quickSummaryCid: entry.quick_summary_cid
     };
   });
 
@@ -685,6 +686,22 @@ function extractLlmAnalysisCidsFromJob(job: Job): Record<number, string> {
 }
 
 /**
+ * Extract quick summary CIDs from a single job's pass_history
+ * Returns a mapping of passNr -> quickSummaryCid
+ */
+function extractQuickSummaryCidsFromJob(job: Job): Record<number, string> {
+  const cids: Record<number, string> = {};
+  if (job.passHistory) {
+    for (const pass of job.passHistory) {
+      if (pass.quickSummaryCid) {
+        cids[pass.passNr] = pass.quickSummaryCid;
+      }
+    }
+  }
+  return cids;
+}
+
+/**
  * Fetch a single job with its report content from R1FS.
  * Uses get_job_data as the primary endpoint for job specs and pass_history.
  * Falls back to get_job_status for real-time worker data (service_info, web_tests_info).
@@ -696,6 +713,8 @@ export async function fetchJobWithReports(jobId: string): Promise<{
   workerResults?: Job['workers'];
   /** LLM analysis content for each pass (passNr -> analysis) */
   llmAnalyses?: Record<number, Record<string, unknown>>;
+  /** Quick AI summaries for each pass (passNr -> analysis) */
+  quickSummaries?: Record<number, Record<string, unknown>>;
 } | null> {
   const config = getAppConfig();
 
@@ -745,6 +764,10 @@ export async function fetchJobWithReports(jobId: string): Promise<{
     const llmAnalysisCids = extractLlmAnalysisCidsFromJob(job);
     const llmAnalyses: Record<number, Record<string, unknown>> = {};
 
+    // Extract and fetch quick summaries for each pass
+    const quickSummaryCids = extractQuickSummaryCidsFromJob(job);
+    const quickSummaries: Record<number, Record<string, unknown>> = {};
+
     const llmFetchPromises = Object.entries(llmAnalysisCids).map(async ([passNrStr, cid]) => {
       const passNr = parseInt(passNrStr, 10);
       const analysis = await fetchLlmAnalysisByCid(cid);
@@ -752,7 +775,16 @@ export async function fetchJobWithReports(jobId: string): Promise<{
         llmAnalyses[passNr] = analysis;
       }
     });
-    await Promise.all(llmFetchPromises);
+
+    const quickSummaryFetchPromises = Object.entries(quickSummaryCids).map(async ([passNrStr, cid]) => {
+      const passNr = parseInt(passNrStr, 10);
+      const summary = await fetchLlmAnalysisByCid(cid);
+      if (summary) {
+        quickSummaries[passNr] = summary;
+      }
+    });
+
+    await Promise.all([...llmFetchPromises, ...quickSummaryFetchPromises]);
 
     // For completed/running jobs, also fetch get_job_status for worker-level details
     // This provides service_info, web_tests_info, open_ports from workers
@@ -789,7 +821,7 @@ export async function fetchJobWithReports(jobId: string): Promise<{
       job.workerCount = workerResults.length;
     }
 
-    return { job, reports, workerResults, llmAnalyses };
+    return { job, reports, workerResults, llmAnalyses, quickSummaries };
   } catch (error) {
     console.error(`[fetchJobWithReports] Error fetching job ${jobId}:`, error);
     if (error instanceof ApiError) {

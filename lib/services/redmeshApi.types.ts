@@ -242,6 +242,7 @@ export interface PassHistoryEntry {
   duration?: number;
   reports: Record<string, string>; // node_address -> CID mapping
   llm_analysis_cid?: string; // CID for LLM analysis (present for completed passes)
+  quick_summary_cid?: string; // CID for quick AI summary (2-4 sentences)
 }
 
 // Stop Monitoring Response

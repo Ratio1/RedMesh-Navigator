@@ -68,6 +68,7 @@ export interface PassHistoryEntry {
   duration?: number; // seconds
   reports: Record<string, string>; // node_address -> CID mapping
   llmAnalysisCid?: string; // CID for LLM analysis report (present for completed passes)
+  quickSummaryCid?: string; // CID for quick AI summary (2-4 sentences)
 }
 
 export interface LlmAnalysis {

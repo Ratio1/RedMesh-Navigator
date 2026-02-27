@@ -45,6 +45,7 @@ interface GenerateJobReportParams {
   aggregatedPorts: AggregatedPortsData;
   workerActivity: WorkerActivityItem[];
   llmAnalyses?: Record<number, LlmAnalysis>;
+  quickSummaries?: Record<number, LlmAnalysis>;
 }
 
 /**
@@ -56,6 +57,7 @@ export function generateJobReport({
   aggregatedPorts,
   workerActivity,
   llmAnalyses,
+  quickSummaries,
 }: GenerateJobReportParams): void {
   const doc = new jsPDF();
   let y = 20;
@@ -361,7 +363,7 @@ export function generateJobReport({
     addDivider();
   };
 
-  // === COVER PAGE ===
+  // === 1. COVER PAGE ===
   // Header bar
   doc.setFillColor(...colors.primary);
   doc.rect(0, 0, pageWidth, 45, 'F');
@@ -430,7 +432,55 @@ export function generateJobReport({
 
   y += 20;
 
-  // Summary Stats - use reports data for accurate counts
+  // === 2. REPORT OVERVIEW (merged Launcher + Timeline + Description) ===
+  addHeader('Report Overview', 11);
+  if (job.initiatorAlias) {
+    addLabelValue('Requested By', job.initiatorAlias);
+  }
+  if (job.initiatorAddress) {
+    addLabelValue('Launcher Address', job.initiatorAddress);
+  } else {
+    addLabelValue('Initiator', job.initiator);
+  }
+  addLabelValue('Task', job.displayName);
+  addLabelValue('Target', job.target);
+  if (job.summary && job.summary !== 'RedMesh scan job') {
+    addLabelValue('Summary', job.summary);
+  }
+  addLabelValue('Priority', job.priority);
+  addLabelValue('Status', job.status);
+  addLabelValue('Report Produced', formatDate(new Date().toISOString()));
+  if (job.totalDuration != null) {
+    addLabelValue('Duration', formatDuration(job.totalDuration));
+  }
+  y += 5;
+
+  // Visual Timeline (circles + lines)
+  if (job.timeline.length > 0) {
+    y += 2;
+    job.timeline.forEach((entry, idx) => {
+      checkPageBreak(10);
+      doc.setFillColor(...colors.primary);
+      doc.circle(margin + 3, y - 1, 2, 'F');
+      if (idx < job.timeline.length - 1) {
+        doc.setDrawColor(...colors.light);
+        doc.setLineWidth(1);
+        doc.line(margin + 3, y + 2, margin + 3, y + 10);
+      }
+      doc.setFontSize(9);
+      doc.setFont('Helvetica', 'bold');
+      doc.setTextColor(...colors.text);
+      doc.text(entry.label, margin + 10, y);
+      doc.setFont('Helvetica', 'normal');
+      doc.setTextColor(...colors.muted);
+      doc.text(formatDate(entry.date), margin + 10, y + 4);
+      y += 12;
+    });
+  }
+
+  addDivider();
+
+  // === 3. SUMMARY STATISTICS ===
   addHeader('Summary Statistics', 11);
   y += 2;
 
@@ -466,160 +516,70 @@ export function generateJobReport({
   });
 
   y += 25;
+
+  // === 3b. QUICK AI SUMMARY (after stats, before full analysis) ===
+  if (quickSummaries) {
+    let bestQuickSummary: LlmAnalysis | undefined;
+
+    if (job.runMode === RUN_MODE.SINGLEPASS) {
+      bestQuickSummary = quickSummaries[1];
+    } else {
+      const passNumbers = Object.keys(quickSummaries).map(Number).sort((a, b) => b - a);
+      if (passNumbers.length > 0) {
+        bestQuickSummary = quickSummaries[passNumbers[0]];
+      }
+    }
+
+    if (bestQuickSummary?.content) {
+      checkPageBreak(25);
+      doc.setFillColor(214, 40, 40, 0.05); // brand-primary/5
+      doc.setDrawColor(214, 40, 40, 0.2);  // brand-primary/20
+      doc.roundedRect(margin, y, contentWidth, 20, 2, 2, 'FD');
+      y += 5;
+      doc.setFontSize(8);
+      doc.setFont('Helvetica', 'bold');
+      doc.setTextColor(...colors.primary);
+      doc.text('AI SUMMARY', margin + 5, y);
+      y += 5;
+      doc.setFontSize(9);
+      doc.setFont('Helvetica', 'normal');
+      doc.setTextColor(...colors.text);
+      const summaryWrapped = doc.splitTextToSize(bestQuickSummary.content, contentWidth - 10);
+      summaryWrapped.forEach((line: string) => {
+        checkPageBreak(4);
+        doc.text(line, margin + 5, y);
+        y += 4.5;
+      });
+      y += 5;
+    }
+  }
+
   addDivider();
 
-  // Task Description
-  if (job.summary && job.summary !== 'RedMesh scan job') {
-    addHeader('Task Description', 11);
-    const descWrapped = doc.splitTextToSize(job.summary, contentWidth);
-    doc.setFontSize(9);
-    doc.setFont('Helvetica', 'normal');
-    doc.setTextColor(...colors.text);
-    descWrapped.forEach((line: string) => {
-      checkPageBreak(4);
-      doc.text(line, margin, y);
-      y += 4.5;
-    });
-    y += 3;
-  }
+  // === 4. AI SECURITY ANALYSIS (promoted — singlepass: pass 1, continuous: latest pass) ===
+  if (llmAnalyses) {
+    let bestAnalysis: LlmAnalysis | undefined;
+    let bestPassNr: number | undefined;
 
-  // AI Security Analysis for singlepass jobs (show at top level)
-  if (job.runMode === RUN_MODE.SINGLEPASS && llmAnalyses && llmAnalyses[1]) {
-    doc.addPage();
-    y = 20;
-    renderLlmAnalysis(llmAnalyses[1]);
-  }
-
-  // Configuration Section
-  addHeader('Scan Configuration', 11);
-  addLabelValue('Run Mode', job.runMode === RUN_MODE.CONTINUOUS ? 'Continuous Monitoring' : 'Single Pass');
-  addLabelValue('Distribution', (job.distribution ?? 'slice').toUpperCase());
-  addLabelValue('Port Order', (job.portOrder ?? 'sequential').toUpperCase());
-  addLabelValue('Port Range', `${job.portRange?.start ?? 1} - ${job.portRange?.end ?? 65535}`);
-  if (job.tempo) {
-    addLabelValue('Scan Delay', `${job.tempo.minSeconds}s - ${job.tempo.maxSeconds}s`);
-  }
-  addLabelValue('Current Pass', String(job.currentPass));
-  if (job.monitorInterval) {
-    addLabelValue('Monitor Interval', `${job.monitorInterval}s`);
-  }
-  if (job.monitoringStatus) {
-    addLabelValue('Monitoring Status', job.monitoringStatus);
-  }
-  if (job.nextPassAt) {
-    addLabelValue('Next Pass At', formatDate(job.nextPassAt));
-  }
-  y += 5;
-
-  // Timing Section
-  addHeader('Timeline', 11);
-  for (const event of job.timeline) {
-    addLabelValue(event.label, formatDate(event.date));
-  }
-  if (job.totalDuration != null) {
-    addLabelValue('Duration', formatDuration(job.totalDuration));
-  }
-  y += 5;
-
-  // Ownership & Launcher Info
-  addHeader('Launcher Information', 11);
-  if (job.initiatorAlias) {
-    addLabelValue('Launcher Alias', job.initiatorAlias);
-  }
-  if (job.initiatorAddress) {
-    addLabelValue('Launcher Address', job.initiatorAddress);
-  } else {
-    addLabelValue('Initiator', job.initiator);
-  }
-
-  y += 5;
-
-  // Enabled Features (full list)
-  if (job.featureSet && job.featureSet.length > 0) {
-    addHeader(`Enabled Features (${job.featureSet.length})`, 11);
-    const serviceFeatures = job.featureSet.filter(f => f.includes('service_info'));
-    const webFeatures = job.featureSet.filter(f => f.includes('web_test'));
-    const otherFeatures = job.featureSet.filter(f => !f.includes('service_info') && !f.includes('web_test'));
-
-    if (serviceFeatures.length > 0) {
-      doc.setFontSize(8);
-      doc.setFont('Helvetica', 'bold');
-      doc.setTextColor(...colors.secondary);
-      checkPageBreak(5);
-      doc.text(`Service Detection (${serviceFeatures.length}):`, margin, y);
-      y += 4;
-      doc.setFont('Helvetica', 'normal');
-      doc.setTextColor(...colors.text);
-      const serviceText = serviceFeatures.map(f => f.replace(/^_service_info_/, '')).join(', ');
-      const serviceWrapped = doc.splitTextToSize(serviceText, contentWidth - 5);
-      serviceWrapped.forEach((line: string) => {
-        checkPageBreak(4);
-        doc.text(line, margin + 5, y);
-        y += 4;
-      });
-      y += 2;
+    if (job.runMode === RUN_MODE.SINGLEPASS) {
+      if (llmAnalyses[1]) {
+        bestAnalysis = llmAnalyses[1];
+        bestPassNr = 1;
+      }
+    } else {
+      // Continuous: pick the latest (highest) pass number
+      const passNumbers = Object.keys(llmAnalyses).map(Number).sort((a, b) => b - a);
+      if (passNumbers.length > 0) {
+        bestPassNr = passNumbers[0];
+        bestAnalysis = llmAnalyses[bestPassNr];
+      }
     }
 
-    if (webFeatures.length > 0) {
-      doc.setFontSize(8);
-      doc.setFont('Helvetica', 'bold');
-      doc.setTextColor(...colors.secondary);
-      checkPageBreak(5);
-      doc.text(`Web Security Tests (${webFeatures.length}):`, margin, y);
-      y += 4;
-      doc.setFont('Helvetica', 'normal');
-      doc.setTextColor(...colors.text);
-      const webText = webFeatures.map(f => f.replace(/^_web_test_/, '')).join(', ');
-      const webWrapped = doc.splitTextToSize(webText, contentWidth - 5);
-      webWrapped.forEach((line: string) => {
-        checkPageBreak(4);
-        doc.text(line, margin + 5, y);
-        y += 4;
-      });
-      y += 2;
+    if (bestAnalysis) {
+      doc.addPage();
+      y = 20;
+      renderLlmAnalysis(bestAnalysis, bestPassNr);
     }
-
-    if (otherFeatures.length > 0) {
-      doc.setFontSize(8);
-      doc.setFont('Helvetica', 'bold');
-      doc.setTextColor(...colors.secondary);
-      checkPageBreak(5);
-      doc.text(`Other Features (${otherFeatures.length}):`, margin, y);
-      y += 4;
-      doc.setFont('Helvetica', 'normal');
-      doc.setTextColor(...colors.text);
-      const otherText = otherFeatures.map(f => f.replace(/^_/, '')).join(', ');
-      const otherWrapped = doc.splitTextToSize(otherText, contentWidth - 5);
-      otherWrapped.forEach((line: string) => {
-        checkPageBreak(4);
-        doc.text(line, margin + 5, y);
-        y += 4;
-      });
-    }
-    y += 3;
-  }
-
-  // Excluded Features
-  if (job.excludedFeatures && job.excludedFeatures.length > 0) {
-    addHeader(`Excluded Features (${job.excludedFeatures.length})`, 11, colors.muted);
-    const excludedText = job.excludedFeatures.map(f => f.replace(/^_/, '').replace(/_/g, ' ')).join(', ');
-    const excludedWrapped = doc.splitTextToSize(excludedText, contentWidth);
-    doc.setFontSize(8);
-    doc.setFont('Helvetica', 'normal');
-    doc.setTextColor(...colors.muted);
-    excludedWrapped.forEach((line: string) => {
-      checkPageBreak(4);
-      doc.text(line, margin, y);
-      y += 4;
-    });
-    y += 3;
-  }
-
-  // Exception Ports
-  if (job.exceptionPorts && job.exceptionPorts.length > 0) {
-    addHeader('Exception Ports', 11);
-    addText(job.exceptionPorts.join(', '));
-    y += 3;
   }
 
   // Build CID → nodeAddress lookup from passHistory
@@ -635,28 +595,7 @@ export function generateJobReport({
   const truncateAddress = (addr: string) =>
     addr.length > 20 ? `${addr.slice(0, 8)}...${addr.slice(-8)}` : addr;
 
-  // Worker Assignments
-  const reportEntries = Object.entries(reports);
-  if (reportEntries.length > 0) {
-    addHeader(`Worker Assignments (${reportEntries.length})`, 11);
-    reportEntries.forEach(([cid, report]) => {
-      checkPageBreak(8);
-      doc.setFontSize(8);
-      doc.setFont('Helvetica', 'bold');
-      doc.setTextColor(...colors.secondary);
-      const nodeAddress = cidToNodeAddress.get(cid) ?? cid;
-      doc.text(truncateAddress(nodeAddress), margin, y);
-      y += 4;
-      doc.setFont('Helvetica', 'normal');
-      doc.setTextColor(...colors.text);
-      const workerStatus = report.done ? 'Done' : report.canceled ? 'Canceled' : 'In Progress';
-      doc.text(`Ports ${report.startPort}-${report.endPort} | Status: ${workerStatus}`, margin + 5, y);
-      y += 5;
-    });
-    y += 3;
-  }
-
-  // === PAGE 2: FINDINGS ===
+  // === 5. DETAILED FINDINGS (new page) ===
   const hasFindings = totalOpenPorts > 0 || job.aggregate || reportsWithDetails.length > 0;
   if (hasFindings) {
     doc.addPage();
@@ -711,7 +650,7 @@ export function generateJobReport({
     addDivider();
   }
 
-  // === DETAILED WORKER REPORTS ===
+  // Detailed Worker Reports
   if (reportsWithDetails.length > 0) {
     addHeader('Detailed Worker Reports', 14, colors.primary);
     y += 5;
@@ -863,11 +802,148 @@ export function generateJobReport({
     });
   }
 
-  // === PASS HISTORY WITH REPORTS ===
+  // === 6. APPENDIX: SCAN CONFIGURATION ===
+  doc.addPage();
+  y = 20;
+  addHeader('Appendix: Scan Configuration', 14, colors.primary);
+  y += 2;
+
+  addLabelValue('Run Mode', job.runMode === RUN_MODE.CONTINUOUS ? 'Continuous Monitoring' : 'Single Pass');
+  addLabelValue('Distribution', (job.distribution ?? 'slice').toUpperCase());
+  addLabelValue('Port Order', (job.portOrder ?? 'sequential').toUpperCase());
+  addLabelValue('Port Range', `${job.portRange?.start ?? 1} - ${job.portRange?.end ?? 65535}`);
+  if (job.tempo) {
+    addLabelValue('Scan Delay', `${job.tempo.minSeconds}s - ${job.tempo.maxSeconds}s`);
+  }
+  addLabelValue('Current Pass', String(job.currentPass));
+  if (job.monitorInterval) {
+    addLabelValue('Monitor Interval', `${job.monitorInterval}s`);
+  }
+  if (job.monitoringStatus) {
+    addLabelValue('Monitoring Status', job.monitoringStatus);
+  }
+  if (job.nextPassAt) {
+    addLabelValue('Next Pass At', formatDate(job.nextPassAt));
+  }
+  y += 5;
+  addDivider();
+
+  // Enabled Features (full list)
+  if (job.featureSet && job.featureSet.length > 0) {
+    addHeader(`Enabled Features (${job.featureSet.length})`, 11);
+    const serviceFeatures = job.featureSet.filter(f => f.includes('service_info'));
+    const webFeatures = job.featureSet.filter(f => f.includes('web_test'));
+    const otherFeatures = job.featureSet.filter(f => !f.includes('service_info') && !f.includes('web_test'));
+
+    if (serviceFeatures.length > 0) {
+      doc.setFontSize(8);
+      doc.setFont('Helvetica', 'bold');
+      doc.setTextColor(...colors.secondary);
+      checkPageBreak(5);
+      doc.text(`Service Detection (${serviceFeatures.length}):`, margin, y);
+      y += 4;
+      doc.setFont('Helvetica', 'normal');
+      doc.setTextColor(...colors.text);
+      const serviceText = serviceFeatures.map(f => f.replace(/^_service_info_/, '')).join(', ');
+      const serviceWrapped = doc.splitTextToSize(serviceText, contentWidth - 5);
+      serviceWrapped.forEach((line: string) => {
+        checkPageBreak(4);
+        doc.text(line, margin + 5, y);
+        y += 4;
+      });
+      y += 2;
+    }
+
+    if (webFeatures.length > 0) {
+      doc.setFontSize(8);
+      doc.setFont('Helvetica', 'bold');
+      doc.setTextColor(...colors.secondary);
+      checkPageBreak(5);
+      doc.text(`Web Security Tests (${webFeatures.length}):`, margin, y);
+      y += 4;
+      doc.setFont('Helvetica', 'normal');
+      doc.setTextColor(...colors.text);
+      const webText = webFeatures.map(f => f.replace(/^_web_test_/, '')).join(', ');
+      const webWrapped = doc.splitTextToSize(webText, contentWidth - 5);
+      webWrapped.forEach((line: string) => {
+        checkPageBreak(4);
+        doc.text(line, margin + 5, y);
+        y += 4;
+      });
+      y += 2;
+    }
+
+    if (otherFeatures.length > 0) {
+      doc.setFontSize(8);
+      doc.setFont('Helvetica', 'bold');
+      doc.setTextColor(...colors.secondary);
+      checkPageBreak(5);
+      doc.text(`Other Features (${otherFeatures.length}):`, margin, y);
+      y += 4;
+      doc.setFont('Helvetica', 'normal');
+      doc.setTextColor(...colors.text);
+      const otherText = otherFeatures.map(f => f.replace(/^_/, '')).join(', ');
+      const otherWrapped = doc.splitTextToSize(otherText, contentWidth - 5);
+      otherWrapped.forEach((line: string) => {
+        checkPageBreak(4);
+        doc.text(line, margin + 5, y);
+        y += 4;
+      });
+    }
+    y += 3;
+  }
+
+  // Excluded Features
+  if (job.excludedFeatures && job.excludedFeatures.length > 0) {
+    addHeader(`Excluded Features (${job.excludedFeatures.length})`, 11, colors.muted);
+    const excludedText = job.excludedFeatures.map(f => f.replace(/^_/, '').replace(/_/g, ' ')).join(', ');
+    const excludedWrapped = doc.splitTextToSize(excludedText, contentWidth);
+    doc.setFontSize(8);
+    doc.setFont('Helvetica', 'normal');
+    doc.setTextColor(...colors.muted);
+    excludedWrapped.forEach((line: string) => {
+      checkPageBreak(4);
+      doc.text(line, margin, y);
+      y += 4;
+    });
+    y += 3;
+  }
+
+  // Exception Ports
+  if (job.exceptionPorts && job.exceptionPorts.length > 0) {
+    addHeader('Exception Ports', 11);
+    addText(job.exceptionPorts.join(', '));
+    y += 3;
+  }
+
+  // === 7. APPENDIX: WORKER ASSIGNMENTS ===
+  const reportEntries = Object.entries(reports);
+  if (reportEntries.length > 0) {
+    addDivider();
+    addHeader('Appendix: Worker Assignments', 14, colors.primary);
+    y += 2;
+    reportEntries.forEach(([cid, report]) => {
+      checkPageBreak(8);
+      doc.setFontSize(8);
+      doc.setFont('Helvetica', 'bold');
+      doc.setTextColor(...colors.secondary);
+      const nodeAddress = cidToNodeAddress.get(cid) ?? cid;
+      doc.text(truncateAddress(nodeAddress), margin, y);
+      y += 4;
+      doc.setFont('Helvetica', 'normal');
+      doc.setTextColor(...colors.text);
+      const workerStatus = report.done ? 'Done' : report.canceled ? 'Canceled' : 'In Progress';
+      doc.text(`Ports ${report.startPort}-${report.endPort} | Status: ${workerStatus}`, margin + 5, y);
+      y += 5;
+    });
+    y += 3;
+  }
+
+  // === 8. APPENDIX: PASS HISTORY ===
   if (job.passHistory && job.passHistory.length > 0) {
     doc.addPage();
     y = 20;
-    addHeader('Pass History', 14, colors.primary);
+    addHeader('Appendix: Pass History', 14, colors.primary);
     y += 5;
 
     job.passHistory.forEach((pass, passIdx) => {
@@ -894,7 +970,7 @@ export function generateJobReport({
 
       y += 15;
 
-      // LLM Analysis for this pass (continuous mode)
+      // LLM Analysis for this pass
       if (llmAnalyses && llmAnalyses[pass.passNr]) {
         renderLlmAnalysis(llmAnalyses[pass.passNr], pass.passNr);
       }
@@ -1100,34 +1176,7 @@ export function generateJobReport({
     });
   }
 
-  // === TIMELINE ===
-  if (job.timeline.length > 0) {
-    checkPageBreak(40);
-    addDivider();
-    addHeader('Timeline', 12);
-    y += 2;
-
-    job.timeline.forEach((entry, idx) => {
-      checkPageBreak(10);
-      doc.setFillColor(...colors.primary);
-      doc.circle(margin + 3, y - 1, 2, 'F');
-      if (idx < job.timeline.length - 1) {
-        doc.setDrawColor(...colors.light);
-        doc.setLineWidth(1);
-        doc.line(margin + 3, y + 2, margin + 3, y + 10);
-      }
-      doc.setFontSize(9);
-      doc.setFont('Helvetica', 'bold');
-      doc.setTextColor(...colors.text);
-      doc.text(entry.label, margin + 10, y);
-      doc.setFont('Helvetica', 'normal');
-      doc.setTextColor(...colors.muted);
-      doc.text(formatDate(entry.date), margin + 10, y + 4);
-      y += 12;
-    });
-  }
-
-  // Footer on all pages
+  // === FOOTER ===
   const totalPages = doc.internal.pages.length - 1;
   for (let i = 1; i <= totalPages; i++) {
     doc.setPage(i);

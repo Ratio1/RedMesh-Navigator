@@ -9,6 +9,8 @@ interface JobState {
   reports: Record<string, WorkerReport>;
   /** LLM analysis content for each pass (passNr -> analysis) */
   llmAnalyses: Record<number, LlmAnalysis>;
+  /** Quick AI summaries for each pass (passNr -> analysis) */
+  quickSummaries: Record<number, LlmAnalysis>;
   loading: boolean;
   error: string | null;
   notFound: boolean;
@@ -24,6 +26,7 @@ export default function useJob(jobId: string): JobState {
   const [job, setJob] = useState<Job | null>(null);
   const [reports, setReports] = useState<Record<string, WorkerReport>>({});
   const [llmAnalyses, setLlmAnalyses] = useState<Record<number, LlmAnalysis>>({});
+  const [quickSummaries, setQuickSummaries] = useState<Record<number, LlmAnalysis>>({});
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [notFound, setNotFound] = useState<boolean>(false);
@@ -65,6 +68,7 @@ export default function useJob(jobId: string): JobState {
       setJob(payload.job ?? null);
       setReports((payload.reports as Record<string, WorkerReport>) ?? {});
       setLlmAnalyses((payload.llmAnalyses as Record<number, LlmAnalysis>) ?? {});
+      setQuickSummaries((payload.quickSummaries as Record<number, LlmAnalysis>) ?? {});
     } catch (err) {
       if (err instanceof DOMException && err.name === 'AbortError') {
         return;
@@ -95,6 +99,7 @@ export default function useJob(jobId: string): JobState {
     job,
     reports,
     llmAnalyses,
+    quickSummaries,
     loading,
     error,
     notFound,

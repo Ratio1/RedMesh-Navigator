@@ -35,7 +35,7 @@ export default function JobDetailsPage(): JSX.Element {
   const params = useParams<{ jobId: string }>();
   const router = useRouter();
   const { user, loading } = useAuth();
-  const { job, reports, llmAnalyses, refresh, loading: jobLoading, error: jobError, notFound } = useJob(params.jobId);
+  const { job, reports, llmAnalyses, quickSummaries, refresh, loading: jobLoading, error: jobError, notFound } = useJob(params.jobId);
   const { stopJob, stopMonitoring, loading: actionLoading } = useJobActions();
 
   const [stopping, setStopping] = useState(false);
@@ -96,6 +96,7 @@ export default function JobDetailsPage(): JSX.Element {
       aggregatedPorts,
       workerActivity,
       llmAnalyses,
+      quickSummaries,
     });
   };
 
@@ -167,7 +168,7 @@ export default function JobDetailsPage(): JSX.Element {
         />
 
         <section className="grid gap-6 lg:grid-cols-3">
-          <AggregateFindings job={job} aggregatedPorts={aggregatedPorts} />
+          <AggregateFindings job={job} aggregatedPorts={aggregatedPorts} quickSummary={quickSummaries[1]} />
           <JobMeta job={job} workerActivity={workerActivity} />
         </section>
 
