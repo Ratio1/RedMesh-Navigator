@@ -8,6 +8,15 @@ import { ProbeResultBlock, SEVERITY_RANK } from './ProbeResultBlock';
 import { normalizeProbeResult } from '@/lib/utils/probeResult';
 import type { ParsedFinding } from '@/lib/utils/probeResult';
 import type { AggregatedPortsData } from '../types';
+import Tooltip from '@/components/ui/Tooltip';
+import {
+  WELL_KNOWN_PORTS,
+  PROTOCOL_DESCRIPTIONS,
+  SEVERITY_DESCRIPTIONS,
+  OWASP_CATEGORIES,
+  CATEGORY_FILTER_DESCRIPTIONS,
+  SORT_MODE_DESCRIPTIONS,
+} from '@/lib/domain/knowledge';
 
 /** Sort probe entries so highest-severity probes come first. */
 function sortByTopSeverity(entries: [string, unknown][]): [string, unknown][] {
@@ -58,16 +67,6 @@ const SEVERITY_BUTTON_STYLES: Record<string, { active: string; inactive: string 
   },
 };
 
-const WELL_KNOWN_PORTS: Record<number, string> = {
-  21: 'FTP', 22: 'SSH', 23: 'TELNET', 25: 'SMTP', 42: 'WINS',
-  53: 'DNS', 80: 'HTTP', 81: 'HTTP', 110: 'POP3', 143: 'IMAP',
-  161: 'SNMP', 443: 'HTTPS', 445: 'SMB', 465: 'SMTP',
-  502: 'MODBUS', 587: 'SMTP', 993: 'IMAP', 995: 'POP3',
-  1433: 'MSSQL', 3306: 'MYSQL', 3389: 'RDP', 5432: 'POSTGRESQL',
-  5900: 'VNC', 6379: 'REDIS', 8000: 'HTTP', 8008: 'HTTP',
-  8080: 'HTTP', 8081: 'HTTP', 8443: 'HTTPS', 8888: 'HTTP',
-  9200: 'HTTP', 11211: 'MEMCACHED', 27017: 'MONGODB',
-};
 
 const PROBE_TO_PROTOCOL: Record<string, string> = {
   '_service_info_ftp': 'FTP', '_service_info_ssh': 'SSH',
@@ -386,18 +385,19 @@ export function DiscoveredPorts({ aggregatedPorts }: DiscoveredPortsProps) {
                 const isActive = severityFilter.has(sev);
                 const styles = SEVERITY_BUTTON_STYLES[sev];
                 return (
-                  <button
-                    key={sev}
-                    onClick={() => toggleSeverity(sev)}
-                    className={`inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium transition-all cursor-pointer ${
-                      isActive ? styles.active : styles.inactive
-                    }`}
-                  >
-                    {sev}
-                    <span className={`text-[10px] ${isActive ? 'opacity-80' : 'opacity-50'}`}>
-                      ({severityCounts[sev]})
-                    </span>
-                  </button>
+                  <Tooltip key={sev} content={SEVERITY_DESCRIPTIONS[sev]} position="bottom">
+                    <button
+                      onClick={() => toggleSeverity(sev)}
+                      className={`inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium transition-all cursor-pointer ${
+                        isActive ? styles.active : styles.inactive
+                      }`}
+                    >
+                      {sev}
+                      <span className={`text-[10px] ${isActive ? 'opacity-80' : 'opacity-50'}`}>
+                        ({severityCounts[sev]})
+                      </span>
+                    </button>
+                  </Tooltip>
                 );
               })}
               {severityFilter.size > 0 && (
@@ -420,20 +420,21 @@ export function DiscoveredPorts({ aggregatedPorts }: DiscoveredPortsProps) {
               ] as const).map(({ key, label, count }) => {
                 const isActive = categoryFilter.has(key);
                 return (
-                  <button
-                    key={key}
-                    onClick={() => toggleCategory(key)}
-                    className={`inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium transition-all cursor-pointer ${
-                      isActive
-                        ? 'bg-brand-primary/20 text-brand-primary border-brand-primary/50'
-                        : 'bg-slate-800/50 text-slate-400 border-slate-600 hover:border-brand-primary/40 hover:text-slate-300'
-                    }`}
-                  >
-                    {label}
-                    <span className={`text-[10px] ${isActive ? 'opacity-80' : 'opacity-50'}`}>
-                      ({count})
-                    </span>
-                  </button>
+                  <Tooltip key={key} content={CATEGORY_FILTER_DESCRIPTIONS[key]} position="bottom">
+                    <button
+                      onClick={() => toggleCategory(key)}
+                      className={`inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium transition-all cursor-pointer ${
+                        isActive
+                          ? 'bg-brand-primary/20 text-brand-primary border-brand-primary/50'
+                          : 'bg-slate-800/50 text-slate-400 border-slate-600 hover:border-brand-primary/40 hover:text-slate-300'
+                      }`}
+                    >
+                      {label}
+                      <span className={`text-[10px] ${isActive ? 'opacity-80' : 'opacity-50'}`}>
+                        ({count})
+                      </span>
+                    </button>
+                  </Tooltip>
                 );
               })}
               {categoryFilter.size > 0 && (
@@ -452,19 +453,21 @@ export function DiscoveredPorts({ aggregatedPorts }: DiscoveredPortsProps) {
                 <span className="text-xs text-slate-500 uppercase tracking-wider mr-1">OWASP</span>
                 {sortedOwaspIds.map((id) => {
                   const isActive = owaspFilter.has(id);
+                  const category = OWASP_CATEGORIES[id.slice(0, 3)] ?? id;
                   return (
-                    <button
-                      key={id}
-                      onClick={() => toggleOwasp(id)}
-                      className={`inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium transition-all cursor-pointer ${
-                        isActive ? OWASP_BUTTON_STYLES.active : OWASP_BUTTON_STYLES.inactive
-                      }`}
-                    >
-                      {id}
-                      <span className={`text-[10px] ${isActive ? 'opacity-80' : 'opacity-50'}`}>
-                        ({portAnalysis.owaspCounts.get(id) ?? 0})
-                      </span>
-                    </button>
+                    <Tooltip key={id} content={category} position="bottom">
+                      <button
+                        onClick={() => toggleOwasp(id)}
+                        className={`inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium transition-all cursor-pointer ${
+                          isActive ? OWASP_BUTTON_STYLES.active : OWASP_BUTTON_STYLES.inactive
+                        }`}
+                      >
+                        {id}
+                        <span className={`text-[10px] ${isActive ? 'opacity-80' : 'opacity-50'}`}>
+                          ({portAnalysis.owaspCounts.get(id) ?? 0})
+                        </span>
+                      </button>
+                    </Tooltip>
                   );
                 })}
                 {owaspFilter.size > 0 && (
@@ -513,26 +516,30 @@ export function DiscoveredPorts({ aggregatedPorts }: DiscoveredPortsProps) {
           <div className="flex items-center gap-2">
             <span className="text-xs text-slate-500 uppercase tracking-wider">Sort</span>
             <div className="inline-flex rounded-md border border-slate-600 overflow-hidden">
-              <button
-                onClick={() => setSortMode('numeric')}
-                className={`px-3 py-1 text-xs font-medium transition-all cursor-pointer ${
-                  sortMode === 'numeric'
-                    ? 'bg-slate-600 text-slate-100'
-                    : 'bg-slate-800/50 text-slate-400 hover:text-slate-300'
-                }`}
-              >
-                Numeric
-              </button>
-              <button
-                onClick={() => setSortMode('risk')}
-                className={`px-3 py-1 text-xs font-medium transition-all cursor-pointer border-l border-slate-600 ${
-                  sortMode === 'risk'
-                    ? 'bg-slate-600 text-slate-100'
-                    : 'bg-slate-800/50 text-slate-400 hover:text-slate-300'
-                }`}
-              >
-                Risk
-              </button>
+              <Tooltip content={SORT_MODE_DESCRIPTIONS.numeric} position="bottom">
+                <button
+                  onClick={() => setSortMode('numeric')}
+                  className={`px-3 py-1 text-xs font-medium transition-all cursor-pointer ${
+                    sortMode === 'numeric'
+                      ? 'bg-slate-600 text-slate-100'
+                      : 'bg-slate-800/50 text-slate-400 hover:text-slate-300'
+                  }`}
+                >
+                  Numeric
+                </button>
+              </Tooltip>
+              <Tooltip content={SORT_MODE_DESCRIPTIONS.risk} position="bottom">
+                <button
+                  onClick={() => setSortMode('risk')}
+                  className={`px-3 py-1 text-xs font-medium transition-all cursor-pointer border-l border-slate-600 ${
+                    sortMode === 'risk'
+                      ? 'bg-slate-600 text-slate-100'
+                      : 'bg-slate-800/50 text-slate-400 hover:text-slate-300'
+                  }`}
+                >
+                  Risk
+                </button>
+              </Tooltip>
             </div>
           </div>
 
@@ -546,9 +553,19 @@ export function DiscoveredPorts({ aggregatedPorts }: DiscoveredPortsProps) {
               const label = portAnalysis.serviceLabel.get(port);
               const count = portAnalysis.findingCount.get(port) ?? 0;
               const isNonStandard = portAnalysis.nonStandard.has(port);
-              return (
+
+              const tooltipLines: string[] = [];
+              if (label) tooltipLines.push(PROTOCOL_DESCRIPTIONS[label] ?? `${label} service`);
+              if (isNonStandard) {
+                const expected = WELL_KNOWN_PORTS[port];
+                tooltipLines.push(expected
+                  ? `Non-standard: ${portAnalysis.detectedProtocol.get(port)} on port typically used for ${expected}`
+                  : `${portAnalysis.detectedProtocol.get(port)} on non-standard port`);
+              }
+              if (count > 0) tooltipLines.push(`${count} finding${count !== 1 ? 's' : ''} across all probes`);
+
+              const pill = (
                 <button
-                  key={port}
                   onClick={() => setSelectedPort(isSelected ? null : port)}
                   className={`relative inline-flex items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium transition-all cursor-pointer ${
                     isSelected
@@ -577,6 +594,19 @@ export function DiscoveredPorts({ aggregatedPorts }: DiscoveredPortsProps) {
                     </span>
                   )}
                 </button>
+              );
+
+              return tooltipLines.length > 0 ? (
+                <Tooltip
+                  key={port}
+                  content={tooltipLines.map((line, i) => (
+                    <span key={i}>{line}{i < tooltipLines.length - 1 && <><br /><br /></>}</span>
+                  ))}
+                >
+                  {pill}
+                </Tooltip>
+              ) : (
+                <span key={port}>{pill}</span>
               );
             })}
             {sortedPorts.length > 100 && !portsExpanded && (

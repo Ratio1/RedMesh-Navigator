@@ -2,6 +2,8 @@
 
 import { normalizeProbeResult, severityLineClass } from '@/lib/utils/probeResult';
 import type { ParsedFinding } from '@/lib/utils/probeResult';
+import Tooltip from '@/components/ui/Tooltip';
+import { OWASP_CATEGORIES, CONFIDENCE_DESCRIPTIONS } from '@/lib/domain/knowledge';
 
 interface ProbeResultBlockProps {
   probeName: string;
@@ -50,7 +52,9 @@ function FindingCard({ finding, accentColor }: { finding: ParsedFinding; accentC
         </span>
         <span className={SEVERITY_TITLE[finding.severity]}>{finding.title}</span>
         {finding.confidence && finding.confidence !== 'firm' && (
-          <span className="text-[10px] text-slate-500 italic">({finding.confidence})</span>
+          <Tooltip content={CONFIDENCE_DESCRIPTIONS[finding.confidence] ?? finding.confidence} position="top">
+            <span className="text-[10px] text-slate-500 italic cursor-help">({finding.confidence})</span>
+          </Tooltip>
         )}
       </div>
 
@@ -78,14 +82,18 @@ function FindingCard({ finding, accentColor }: { finding: ParsedFinding; accentC
       {(finding.cwe_id || finding.owasp_id) && (
         <div className="mt-1.5 flex gap-2 flex-wrap">
           {finding.cwe_id && (
-            <span className="text-[10px] font-mono text-slate-500 bg-slate-800 rounded px-1.5 py-0.5">
-              {finding.cwe_id}
-            </span>
+            <Tooltip content="Common Weakness Enumeration — standard catalog of software weakness types." position="top">
+              <span className="text-[10px] font-mono text-slate-500 bg-slate-800 rounded px-1.5 py-0.5 cursor-help">
+                {finding.cwe_id}
+              </span>
+            </Tooltip>
           )}
           {finding.owasp_id && (
-            <span className="text-[10px] font-mono text-slate-500 bg-slate-800 rounded px-1.5 py-0.5">
-              {finding.owasp_id}
-            </span>
+            <Tooltip content={OWASP_CATEGORIES[finding.owasp_id.slice(0, 3)] ?? 'OWASP Top 10 vulnerability category.'} position="top">
+              <span className="text-[10px] font-mono text-slate-500 bg-slate-800 rounded px-1.5 py-0.5 cursor-help">
+                {finding.owasp_id}
+              </span>
+            </Tooltip>
           )}
         </div>
       )}

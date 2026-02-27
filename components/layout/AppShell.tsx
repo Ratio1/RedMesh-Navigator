@@ -16,7 +16,8 @@ import { APP_VERSION } from '@/lib/config/version';
 const navItems = [
   { href: '/dashboard', label: 'Tasks' },
   { href: '/mesh', label: 'Mesh' },
-  { href: '/advanced', label: 'Advanced' }
+  { href: '/advanced', label: 'Advanced' },
+  { href: '/docs', label: 'Docs' },
 ];
 
 function StatusDot({ active }: { active: boolean }): JSX.Element {

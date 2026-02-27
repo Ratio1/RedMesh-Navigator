@@ -8,8 +8,21 @@ import TextArea from '@/components/ui/TextArea';
 import Card from '@/components/ui/Card';
 import { useAuth } from '@/components/auth/AuthContext';
 import { useAppConfig } from '@/components/layout/AppConfigContext';
+import Tooltip from '@/components/ui/Tooltip';
+import { TASK_FORM_DESCRIPTIONS } from '@/lib/domain/knowledge';
 import type { Job, JobDistribution, JobDuration } from '@/lib/api/types';
 import { DURATION } from '@/lib/api/constants';
+
+/** Small circled-i icon used as a tooltip trigger next to form labels. */
+function InfoTip({ text, position = 'right' }: { text: string; position?: 'top' | 'bottom' | 'left' | 'right' }) {
+  return (
+    <Tooltip content={text} position={position}>
+      <span className="ml-1 inline-flex h-4 w-4 items-center justify-center rounded-full border border-slate-600 text-[10px] text-slate-500 hover:border-slate-400 hover:text-slate-300 transition cursor-help" aria-label="More info">
+        i
+      </span>
+    </Tooltip>
+  );
+}
 
 // Dynamically import map component to avoid SSR issues
 const NodeMapSelector = dynamic(
@@ -242,8 +255,9 @@ export default function JobForm({ onCreated }: JobFormProps): JSX.Element {
     >
       <form className="space-y-5" onSubmit={handleSubmit}>
         <div className="space-y-2">
-          <label htmlFor="job-name" className="block text-sm font-medium text-slate-200">
+          <label htmlFor="job-name" className="flex items-center text-sm font-medium text-slate-200">
             Task name
+            <InfoTip text={TASK_FORM_DESCRIPTIONS.taskName} />
           </label>
           <Input
             id="job-name"
@@ -258,8 +272,9 @@ export default function JobForm({ onCreated }: JobFormProps): JSX.Element {
           )}
         </div>
         <div className="space-y-2">
-          <label htmlFor="job-summary" className="block text-sm font-medium text-slate-200">
+          <label htmlFor="job-summary" className="flex items-center text-sm font-medium text-slate-200">
             Summary
+            <InfoTip text={TASK_FORM_DESCRIPTIONS.summary} />
           </label>
           <TextArea
             id="job-summary"
@@ -270,8 +285,9 @@ export default function JobForm({ onCreated }: JobFormProps): JSX.Element {
           />
         </div>
         <div className="space-y-2">
-          <label htmlFor="job-target" className="block text-sm font-medium text-slate-200">
+          <label htmlFor="job-target" className="flex items-center text-sm font-medium text-slate-200">
             Target host or network
+            <InfoTip text={TASK_FORM_DESCRIPTIONS.target} />
           </label>
           <Input
             id="job-target"
@@ -287,13 +303,17 @@ export default function JobForm({ onCreated }: JobFormProps): JSX.Element {
         </div>
         <div className="space-y-2">
           <div className="space-y-1">
-            <p className="text-sm font-medium text-slate-200">Port range</p>
+            <p className="flex items-center text-sm font-medium text-slate-200">
+              Port range
+              <InfoTip text={TASK_FORM_DESCRIPTIONS.portRange} />
+            </p>
             <p className="text-xs text-slate-400">Define the inclusive range to sweep.</p>
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
-              <label htmlFor="job-port-start" className="block text-sm font-medium text-slate-200">
+              <label htmlFor="job-port-start" className="flex items-center text-sm font-medium text-slate-200">
                 Start port
+                <InfoTip text={TASK_FORM_DESCRIPTIONS.portStart} />
               </label>
               <Input
                 id="job-port-start"
@@ -306,8 +326,9 @@ export default function JobForm({ onCreated }: JobFormProps): JSX.Element {
               />
             </div>
             <div className="space-y-2">
-              <label htmlFor="job-port-end" className="block text-sm font-medium text-slate-200">
+              <label htmlFor="job-port-end" className="flex items-center text-sm font-medium text-slate-200">
                 End port
+                <InfoTip text={TASK_FORM_DESCRIPTIONS.portEnd} />
               </label>
               <Input
                 id="job-port-end"
@@ -322,8 +343,9 @@ export default function JobForm({ onCreated }: JobFormProps): JSX.Element {
           </div>
         </div>
         <div className="space-y-2">
-          <label htmlFor="job-exceptions" className="block text-sm font-medium text-slate-200">
+          <label htmlFor="job-exceptions" className="flex items-center text-sm font-medium text-slate-200">
             Exclude ports (comma separated)
+            <InfoTip text={TASK_FORM_DESCRIPTIONS.excludePorts} />
           </label>
           <Input
             id="job-exceptions"
@@ -335,7 +357,10 @@ export default function JobForm({ onCreated }: JobFormProps): JSX.Element {
         <div className="space-y-3">
           <div className="space-y-1">
             <div className="flex items-center justify-between">
-              <p className="text-sm font-medium text-slate-200">Tests</p>
+              <p className="flex items-center text-sm font-medium text-slate-200">
+                Tests
+                <InfoTip text={TASK_FORM_DESCRIPTIONS.tests} />
+              </p>
               <span className="text-xs text-slate-400">
                 {selectedFeatures.length} of {featureCatalog.length} enabled
               </span>
@@ -407,38 +432,45 @@ export default function JobForm({ onCreated }: JobFormProps): JSX.Element {
         </div>
         <div className="space-y-3">
           <div className="space-y-1">
-            <p className="text-sm font-medium text-slate-200">Distribution</p>
+            <p className="flex items-center text-sm font-medium text-slate-200">
+              Distribution
+              <InfoTip text={TASK_FORM_DESCRIPTIONS.distribution} />
+            </p>
             <p className="text-xs text-slate-400">Default: slice the port range across workers.</p>
           </div>
           <div className="grid gap-2 sm:grid-cols-2">
-            <button
-              type="button"
-              onClick={() => setDistribution('slice')}
-              className={`flex flex-col items-start rounded-xl border px-4 py-3 text-left text-sm transition ${
-                distribution === 'slice'
-                  ? 'border-brand-primary/60 bg-brand-primary/15 text-slate-100'
-                  : 'border-white/10 bg-slate-900/40 text-slate-200 hover:border-brand-primary/40'
-              }`}
-            >
-              <span className="font-semibold">Slice port range</span>
-              <span className="text-[0.75rem] text-slate-400">
-                Each worker receives a unique slice of the configured port range.
-              </span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setDistribution('mirror')}
-              className={`flex flex-col items-start rounded-xl border px-4 py-3 text-left text-sm transition ${
-                distribution === 'mirror'
-                  ? 'border-brand-primary/60 bg-brand-primary/15 text-slate-100'
-                  : 'border-white/10 bg-slate-900/40 text-slate-200 hover:border-brand-primary/40'
-              }`}
-            >
-              <span className="font-semibold">Mirror port range</span>
-              <span className="text-[0.75rem] text-slate-400">
-                All workers scan the same range for redundancy or validation.
-              </span>
-            </button>
+            <Tooltip content={TASK_FORM_DESCRIPTIONS.distributionSlice} position="bottom">
+              <button
+                type="button"
+                onClick={() => setDistribution('slice')}
+                className={`flex flex-col items-start rounded-xl border px-4 py-3 text-left text-sm transition ${
+                  distribution === 'slice'
+                    ? 'border-brand-primary/60 bg-brand-primary/15 text-slate-100'
+                    : 'border-white/10 bg-slate-900/40 text-slate-200 hover:border-brand-primary/40'
+                }`}
+              >
+                <span className="font-semibold">Slice port range</span>
+                <span className="text-[0.75rem] text-slate-400">
+                  Each worker receives a unique slice of the configured port range.
+                </span>
+              </button>
+            </Tooltip>
+            <Tooltip content={TASK_FORM_DESCRIPTIONS.distributionMirror} position="bottom">
+              <button
+                type="button"
+                onClick={() => setDistribution('mirror')}
+                className={`flex flex-col items-start rounded-xl border px-4 py-3 text-left text-sm transition ${
+                  distribution === 'mirror'
+                    ? 'border-brand-primary/60 bg-brand-primary/15 text-slate-100'
+                    : 'border-white/10 bg-slate-900/40 text-slate-200 hover:border-brand-primary/40'
+                }`}
+              >
+                <span className="font-semibold">Mirror port range</span>
+                <span className="text-[0.75rem] text-slate-400">
+                  All workers scan the same range for redundancy or validation.
+                </span>
+              </button>
+            </Tooltip>
           </div>
           {/* TODO: Re-enable worker count slider when backend supports worker_count parameter
           <div className="space-y-2">
@@ -500,39 +532,47 @@ export default function JobForm({ onCreated }: JobFormProps): JSX.Element {
           */}
         </div>
         <div className="space-y-3">
-          <p className="text-sm font-medium text-slate-200">Run mode</p>
+          <p className="flex items-center text-sm font-medium text-slate-200">
+            Run mode
+            <InfoTip text={TASK_FORM_DESCRIPTIONS.runMode} />
+          </p>
           <div className="grid gap-2 sm:grid-cols-2">
-            <button
-              type="button"
-              onClick={() => setDuration('singlepass')}
-              className={`flex flex-col items-start rounded-xl border px-4 py-3 text-left text-sm transition ${
-                duration === 'singlepass'
-                  ? 'border-brand-primary/60 bg-brand-primary/15 text-slate-100'
-                  : 'border-white/10 bg-slate-900/40 text-slate-200 hover:border-brand-primary/40'
-              }`}
-            >
-              <span className="font-semibold">Single-pass</span>
-              <span className="text-[0.75rem] text-slate-400">Run once from start to end.</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setDuration(DURATION.CONTINUOUS)}
-              className={`flex flex-col items-start rounded-xl border px-4 py-3 text-left text-sm transition ${
-                duration === DURATION.CONTINUOUS
-                  ? 'border-brand-primary/60 bg-brand-primary/15 text-slate-100'
-                  : 'border-white/10 bg-slate-900/40 text-slate-200 hover:border-brand-primary/40'
-              }`}
-            >
-              <span className="font-semibold">Continuous monitoring</span>
-              <span className="text-[0.75rem] text-slate-400">
-                Keep re-running with randomized pauses between steps.
-              </span>
-            </button>
+            <Tooltip content={TASK_FORM_DESCRIPTIONS.singlePass} position="bottom">
+              <button
+                type="button"
+                onClick={() => setDuration('singlepass')}
+                className={`flex flex-col items-start rounded-xl border px-4 py-3 text-left text-sm transition ${
+                  duration === 'singlepass'
+                    ? 'border-brand-primary/60 bg-brand-primary/15 text-slate-100'
+                    : 'border-white/10 bg-slate-900/40 text-slate-200 hover:border-brand-primary/40'
+                }`}
+              >
+                <span className="font-semibold">Single-pass</span>
+                <span className="text-[0.75rem] text-slate-400">Run once from start to end.</span>
+              </button>
+            </Tooltip>
+            <Tooltip content={TASK_FORM_DESCRIPTIONS.continuous} position="bottom">
+              <button
+                type="button"
+                onClick={() => setDuration(DURATION.CONTINUOUS)}
+                className={`flex flex-col items-start rounded-xl border px-4 py-3 text-left text-sm transition ${
+                  duration === DURATION.CONTINUOUS
+                    ? 'border-brand-primary/60 bg-brand-primary/15 text-slate-100'
+                    : 'border-white/10 bg-slate-900/40 text-slate-200 hover:border-brand-primary/40'
+                }`}
+              >
+                <span className="font-semibold">Continuous monitoring</span>
+                <span className="text-[0.75rem] text-slate-400">
+                  Keep re-running with randomized pauses between steps.
+                </span>
+              </button>
+            </Tooltip>
           </div>
           {duration === DURATION.CONTINUOUS && (
             <div className="mt-3 space-y-2">
-              <label htmlFor="monitor-interval" className="block text-sm font-medium text-slate-200">
+              <label htmlFor="monitor-interval" className="flex items-center text-sm font-medium text-slate-200">
                 Monitor interval (seconds)
+                <InfoTip text={TASK_FORM_DESCRIPTIONS.monitorInterval} />
               </label>
               <p className="text-xs text-slate-400">
                 Time to wait between scan passes. Leave at 0 to use the default configuration.
@@ -553,8 +593,9 @@ export default function JobForm({ onCreated }: JobFormProps): JSX.Element {
         <div className="space-y-3 rounded-xl border border-white/10 bg-slate-900/30 p-4">
           <div className="space-y-1">
             <div className="flex items-center justify-between">
-              <label htmlFor="tempo-min" className="block text-sm font-medium text-slate-200">
+              <label htmlFor="tempo-min" className="flex items-center text-sm font-medium text-slate-200">
                 Dune sand walking (seconds)
+                <InfoTip text={TASK_FORM_DESCRIPTIONS.duneSandWalking} />
               </label>
               <button
                 type="button"
@@ -633,12 +674,18 @@ export default function JobForm({ onCreated }: JobFormProps): JSX.Element {
         </div>
         {/* Security options */}
         <div className="space-y-4 rounded-xl border border-white/10 bg-slate-900/30 p-4">
-          <p className="text-sm font-medium text-slate-200">Security options</p>
+          <p className="flex items-center text-sm font-medium text-slate-200">
+            Security options
+            <InfoTip text={TASK_FORM_DESCRIPTIONS.securityOptions} />
+          </p>
 
           {/* Redact credentials */}
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">
-              <p className="text-sm text-slate-200">Redact credentials in reports</p>
+              <p className="flex items-center text-sm text-slate-200">
+                Redact credentials in reports
+                <InfoTip text={TASK_FORM_DESCRIPTIONS.redactCredentials} />
+              </p>
               <p className="text-xs text-slate-400">Strip accepted passwords from persisted scan reports. Credentials remain visible during the active session.</p>
             </div>
             <div className="flex items-center gap-1 rounded-lg border border-white/10 bg-slate-900/50 p-0.5">
@@ -650,7 +697,10 @@ export default function JobForm({ onCreated }: JobFormProps): JSX.Element {
           {/* ICS safe mode */}
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">
-              <p className="text-sm text-slate-200">ICS safe mode</p>
+              <p className="flex items-center text-sm text-slate-200">
+                ICS safe mode
+                <InfoTip text={TASK_FORM_DESCRIPTIONS.icsSafeMode} />
+              </p>
               <p className="text-xs text-slate-400">Stop scanning a host when industrial control system indicators are detected (Modbus, SCADA, PLC). Prevents accidental disruption.</p>
             </div>
             <div className="flex items-center gap-1 rounded-lg border border-white/10 bg-slate-900/50 p-0.5">
@@ -662,7 +712,10 @@ export default function JobForm({ onCreated }: JobFormProps): JSX.Element {
           {/* Rate limiting */}
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">
-              <p className="text-sm text-slate-200">Rate limiting</p>
+              <p className="flex items-center text-sm text-slate-200">
+                Rate limiting
+                <InfoTip text={TASK_FORM_DESCRIPTIONS.rateLimiting} />
+              </p>
               <p className="text-xs text-slate-400">Enforce minimum delays between probes to reduce target impact. Recommended for production environments.</p>
             </div>
             <div className="flex items-center gap-1 rounded-lg border border-white/10 bg-slate-900/50 p-0.5">
@@ -680,11 +733,15 @@ export default function JobForm({ onCreated }: JobFormProps): JSX.Element {
             >
               <span className="text-xs">{expandedIdentity ? '\u25BE' : '\u25B8'}</span>
               Customize scanner identity
+              <InfoTip text={TASK_FORM_DESCRIPTIONS.scannerIdentity} />
             </button>
             {expandedIdentity && (
               <div className="mt-3 space-y-3 pl-4 border-l border-white/5">
                 <div>
-                  <label htmlFor="scanner-identity" className="block text-xs text-slate-400 mb-1">EHLO / probe domain</label>
+                  <label htmlFor="scanner-identity" className="flex items-center text-xs text-slate-400 mb-1">
+                    EHLO / probe domain
+                    <InfoTip text={TASK_FORM_DESCRIPTIONS.ehloDomain} />
+                  </label>
                   <input
                     id="scanner-identity"
                     type="text"
@@ -695,7 +752,10 @@ export default function JobForm({ onCreated }: JobFormProps): JSX.Element {
                   />
                 </div>
                 <div>
-                  <label htmlFor="scanner-ua" className="block text-xs text-slate-400 mb-1">HTTP User-Agent</label>
+                  <label htmlFor="scanner-ua" className="flex items-center text-xs text-slate-400 mb-1">
+                    HTTP User-Agent
+                    <InfoTip text={TASK_FORM_DESCRIPTIONS.httpUserAgent} />
+                  </label>
                   <input
                     id="scanner-ua"
                     type="text"
@@ -711,28 +771,36 @@ export default function JobForm({ onCreated }: JobFormProps): JSX.Element {
         </div>
 
         <div className="space-y-2">
-          <label htmlFor="job-priority" className="block text-sm font-medium text-slate-200">
+          <label htmlFor="job-priority" className="flex items-center text-sm font-medium text-slate-200">
             Priority
+            <InfoTip text={TASK_FORM_DESCRIPTIONS.priority} />
           </label>
           <div className="flex gap-2">
-            {priorities.map((option) => (
-              <button
-                key={option.value}
-                type="button"
-                className={`flex-1 rounded-xl border border-white/10 px-4 py-2 text-sm transition hover:border-brand-primary/50 hover:bg-slate-800 ${
-                  priority === option.value ? 'bg-brand-primary/15 text-slate-100' : 'bg-slate-900/50 text-slate-200'
-                }`}
-                onClick={() => setPriority(option.value)}
-              >
-                {option.label}
-              </button>
-            ))}
+            {priorities.map((option) => {
+              const tipKey = `priority${option.label}` as keyof typeof TASK_FORM_DESCRIPTIONS;
+              return (
+                <Tooltip key={option.value} content={TASK_FORM_DESCRIPTIONS[tipKey]} position="bottom">
+                  <button
+                    type="button"
+                    className={`flex-1 rounded-xl border border-white/10 px-4 py-2 text-sm transition hover:border-brand-primary/50 hover:bg-slate-800 ${
+                      priority === option.value ? 'bg-brand-primary/15 text-slate-100' : 'bg-slate-900/50 text-slate-200'
+                    }`}
+                    onClick={() => setPriority(option.value)}
+                  >
+                    {option.label}
+                  </button>
+                </Tooltip>
+              );
+            })}
           </div>
         </div>
         <div className="space-y-3">
           <div className="space-y-1">
             <div className="flex items-center justify-between">
-              <p className="text-sm font-medium text-slate-200">Worker nodes</p>
+              <p className="flex items-center text-sm font-medium text-slate-200">
+                Worker nodes
+                <InfoTip text={TASK_FORM_DESCRIPTIONS.workerNodes} />
+              </p>
               <div className="flex items-center gap-3">
                 {peers.length > 0 && (
                   <span className="text-xs text-slate-400">
@@ -880,6 +948,7 @@ export default function JobForm({ onCreated }: JobFormProps): JSX.Element {
             />
             <span className="text-sm text-slate-200">
               I confirm I am authorized to scan this target and have obtained necessary permissions.
+              <InfoTip text={TASK_FORM_DESCRIPTIONS.authorization} position="top" />
             </span>
           </label>
           {attempted && !authorized && (
