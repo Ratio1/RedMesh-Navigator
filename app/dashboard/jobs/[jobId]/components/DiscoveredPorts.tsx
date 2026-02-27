@@ -9,16 +9,20 @@ import { normalizeProbeResult } from '@/lib/utils/probeResult';
 import type { ParsedFinding } from '@/lib/utils/probeResult';
 import type { AggregatedPortsData } from '../types';
 
+/** Sort probe entries so highest-severity probes come first. */
+function sortByTopSeverity(entries: [string, unknown][]): [string, unknown][] {
+  return [...entries].sort((a, b) => {
+    const sevA = topSeverityFromResult(a[1]);
+    const sevB = topSeverityFromResult(b[1]);
+    return sevA - sevB;
+  });
+}
+
 /** Return the highest (lowest-rank) severity across all findings in a probe result. */
-function topSeverity(result: unknown): number {
+function topSeverityFromResult(result: unknown): number {
   const { findings } = normalizeProbeResult(result);
   if (findings.length === 0) return SEVERITY_RANK.INFO;
   return Math.min(...findings.map((f) => SEVERITY_RANK[f.severity] ?? SEVERITY_RANK.INFO));
-}
-
-/** Sort probe entries so highest-severity probes come first. */
-function sortByTopSeverity(entries: [string, unknown][]): [string, unknown][] {
-  return [...entries].sort((a, b) => topSeverity(a[1]) - topSeverity(b[1]));
 }
 
 const SEVERITY_LEVELS: ParsedFinding['severity'][] = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW', 'INFO'];
@@ -54,6 +58,47 @@ const SEVERITY_BUTTON_STYLES: Record<string, { active: string; inactive: string 
   },
 };
 
+const WELL_KNOWN_PORTS: Record<number, string> = {
+  21: 'FTP', 22: 'SSH', 23: 'TELNET', 25: 'SMTP', 42: 'WINS',
+  53: 'DNS', 80: 'HTTP', 81: 'HTTP', 110: 'POP3', 143: 'IMAP',
+  161: 'SNMP', 443: 'HTTPS', 445: 'SMB', 465: 'SMTP',
+  502: 'MODBUS', 587: 'SMTP', 993: 'IMAP', 995: 'POP3',
+  1433: 'MSSQL', 3306: 'MYSQL', 3389: 'RDP', 5432: 'POSTGRESQL',
+  5900: 'VNC', 6379: 'REDIS', 8000: 'HTTP', 8008: 'HTTP',
+  8080: 'HTTP', 8081: 'HTTP', 8443: 'HTTPS', 8888: 'HTTP',
+  9200: 'HTTP', 11211: 'MEMCACHED', 27017: 'MONGODB',
+};
+
+const PROBE_TO_PROTOCOL: Record<string, string> = {
+  '_service_info_ftp': 'FTP', '_service_info_ssh': 'SSH',
+  '_service_info_telnet': 'TELNET', '_service_info_smtp': 'SMTP',
+  '_service_info_dns': 'DNS', '_service_info_http': 'HTTP',
+  '_service_info_https': 'HTTPS', '_service_info_http_alt': 'HTTP',
+  '_service_info_tls': 'TLS', '_service_info_mssql': 'MSSQL',
+  '_service_info_mysql': 'MYSQL', '_service_info_rdp': 'RDP',
+  '_service_info_postgresql': 'POSTGRESQL', '_service_info_vnc': 'VNC',
+  '_service_info_redis': 'REDIS', '_service_info_elasticsearch': 'ELASTICSEARCH',
+  '_service_info_memcached': 'MEMCACHED', '_service_info_mongodb': 'MONGODB',
+  '_service_info_snmp': 'SNMP', '_service_info_smb': 'SMB',
+  '_service_info_modbus': 'MODBUS', '_service_info_generic': 'GENERIC',
+  '_service_info_mysql_creds': 'MYSQL', '_service_info_postgresql_creds': 'POSTGRESQL',
+};
+
+const OWASP_BUTTON_STYLES = {
+  active: 'bg-purple-500/20 text-purple-300 border-purple-500/60',
+  inactive: 'bg-slate-800/50 text-slate-400 border-slate-600 hover:border-purple-500/40 hover:text-purple-300',
+};
+
+interface PortAnalysisResult {
+  severityMap: Map<number, string>;
+  serviceLabel: Map<number, string>;
+  detectedProtocol: Map<number, string>;
+  findingCount: Map<number, number>;
+  nonStandard: Set<number>;
+  owaspCounts: Map<string, number>;
+  owaspIdsPerPort: Map<number, Set<string>>;
+}
+
 interface DiscoveredPortsProps {
   aggregatedPorts: AggregatedPortsData;
 }
@@ -65,38 +110,115 @@ export function DiscoveredPorts({ aggregatedPorts }: DiscoveredPortsProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [severityFilter, setSeverityFilter] = useState<Set<string>>(new Set());
   const [categoryFilter, setCategoryFilter] = useState<Set<string>>(new Set());
+  const [sortMode, setSortMode] = useState<'numeric' | 'risk'>('numeric');
+  const [owaspFilter, setOwaspFilter] = useState<Set<string>>(new Set());
 
   const searchInputRef = useRef<HTMLInputElement>(null);
 
-  // Map each port to its highest severity across all probes + web tests
-  const portSeverityMap = useMemo(() => {
-    const map = new Map<number, string>();
+  // Combined port analysis — single pass over all ports × all probes
+  const portAnalysis = useMemo<PortAnalysisResult>(() => {
+    const severityMap = new Map<number, string>();
+    const serviceLabel = new Map<number, string>();
+    const detectedProtocol = new Map<number, string>();
+    const findingCount = new Map<number, number>();
+    const nonStandard = new Set<number>();
+    const owaspCounts = new Map<string, number>();
+    const owaspIdsPerPort = new Map<number, Set<string>>();
+
     for (const port of aggregatedPorts.ports) {
-      let best = SEVERITY_RANK.INFO;
+      let bestSev = SEVERITY_RANK.INFO;
+      let totalFindings = 0;
+      let detected: string | null = null;
+      const portOwaspIds = new Set<string>();
+
+      // Process service probes
       const svc = aggregatedPorts.services.get(port);
       if (svc) {
-        for (const result of Object.values(svc)) {
-          best = Math.min(best, topSeverity(result));
+        for (const [probeName, result] of Object.entries(svc)) {
+          const { findings } = normalizeProbeResult(result);
+          totalFindings += findings.length;
+          for (const f of findings) {
+            const rank = SEVERITY_RANK[f.severity] ?? SEVERITY_RANK.INFO;
+            if (rank < bestSev) bestSev = rank;
+            if (f.owasp_id) {
+              portOwaspIds.add(f.owasp_id);
+              owaspCounts.set(f.owasp_id, (owaspCounts.get(f.owasp_id) ?? 0) + 1);
+            }
+          }
+          if (findings.length === 0) {
+            bestSev = Math.min(bestSev, topSeverityFromResult(result));
+          }
+          // Detect protocol from probe name (skip GENERIC and TLS)
+          const proto = PROBE_TO_PROTOCOL[probeName];
+          if (proto && proto !== 'GENERIC' && proto !== 'TLS' && !detected) {
+            detected = proto;
+          }
         }
       }
+
+      // Process web test probes
       const web = aggregatedPorts.webTests.get(port);
       if (web) {
-        for (const result of Object.values(web)) {
-          best = Math.min(best, topSeverity(result));
+        for (const [, result] of Object.entries(web)) {
+          const { findings } = normalizeProbeResult(result);
+          totalFindings += findings.length;
+          for (const f of findings) {
+            const rank = SEVERITY_RANK[f.severity] ?? SEVERITY_RANK.INFO;
+            if (rank < bestSev) bestSev = rank;
+            if (f.owasp_id) {
+              portOwaspIds.add(f.owasp_id);
+              owaspCounts.set(f.owasp_id, (owaspCounts.get(f.owasp_id) ?? 0) + 1);
+            }
+          }
+          if (findings.length === 0) {
+            bestSev = Math.min(bestSev, topSeverityFromResult(result));
+          }
         }
       }
-      const label = Object.entries(SEVERITY_RANK).find(([, v]) => v === best)?.[0] ?? 'INFO';
-      map.set(port, label);
+
+      // Severity label
+      const sevLabel = Object.entries(SEVERITY_RANK).find(([, v]) => v === bestSev)?.[0] ?? 'INFO';
+      severityMap.set(port, sevLabel);
+
+      // Service label: WELL_KNOWN_PORTS first, then infer from probe
+      const wellKnownLabel = WELL_KNOWN_PORTS[port];
+      if (wellKnownLabel) {
+        serviceLabel.set(port, wellKnownLabel);
+      } else if (detected) {
+        serviceLabel.set(port, detected);
+      }
+
+      // Detected protocol
+      if (detected) {
+        detectedProtocol.set(port, detected);
+      }
+
+      // Finding count
+      findingCount.set(port, totalFindings);
+
+      // OWASP IDs per port
+      if (portOwaspIds.size > 0) {
+        owaspIdsPerPort.set(port, portOwaspIds);
+      }
+
+      // Non-standard port detection
+      if (detected) {
+        const expected = WELL_KNOWN_PORTS[port];
+        if (!expected || expected !== detected) {
+          nonStandard.add(port);
+        }
+      }
     }
-    return map;
+
+    return { severityMap, serviceLabel, detectedProtocol, findingCount, nonStandard, owaspCounts, owaspIdsPerPort };
   }, [aggregatedPorts]);
 
   // Severity counts for filter badges
   const severityCounts = useMemo(() => {
     const counts: Record<string, number> = { CRITICAL: 0, HIGH: 0, MEDIUM: 0, LOW: 0, INFO: 0 };
-    for (const sev of portSeverityMap.values()) counts[sev]++;
+    for (const sev of portAnalysis.severityMap.values()) counts[sev]++;
     return counts;
-  }, [portSeverityMap]);
+  }, [portAnalysis]);
 
   // Category counts
   const categoryCounts = useMemo(() => {
@@ -113,12 +235,17 @@ export function DiscoveredPorts({ aggregatedPorts }: DiscoveredPortsProps) {
     return { services, web, nodata };
   }, [aggregatedPorts]);
 
+  // Sorted OWASP IDs for filter row
+  const sortedOwaspIds = useMemo(() => {
+    return Array.from(portAnalysis.owaspCounts.keys()).sort();
+  }, [portAnalysis]);
+
   // Filtered ports
   const filteredPorts = useMemo(() => {
     return aggregatedPorts.ports.filter((port) => {
       if (searchQuery && !String(port).includes(searchQuery)) return false;
       if (severityFilter.size > 0) {
-        const sev = portSeverityMap.get(port) ?? 'INFO';
+        const sev = portAnalysis.severityMap.get(port) ?? 'INFO';
         if (!severityFilter.has(sev)) return false;
       }
       if (categoryFilter.size > 0) {
@@ -131,11 +258,31 @@ export function DiscoveredPorts({ aggregatedPorts }: DiscoveredPortsProps) {
           (categoryFilter.has('nodata') && !hasData);
         if (!match) return false;
       }
+      if (owaspFilter.size > 0) {
+        const portOwasp = portAnalysis.owaspIdsPerPort.get(port);
+        if (!portOwasp) return false;
+        let hasMatch = false;
+        for (const id of owaspFilter) {
+          if (portOwasp.has(id)) { hasMatch = true; break; }
+        }
+        if (!hasMatch) return false;
+      }
       return true;
     });
-  }, [aggregatedPorts, searchQuery, severityFilter, categoryFilter, portSeverityMap]);
+  }, [aggregatedPorts, searchQuery, severityFilter, categoryFilter, owaspFilter, portAnalysis]);
 
-  const isFiltered = searchQuery || severityFilter.size > 0 || categoryFilter.size > 0;
+  // Sorted ports (numeric or risk-first)
+  const sortedPorts = useMemo(() => {
+    if (sortMode === 'numeric') return filteredPorts;
+    return [...filteredPorts].sort((a, b) => {
+      const sevA = SEVERITY_RANK[(portAnalysis.severityMap.get(a) ?? 'INFO') as ParsedFinding['severity']];
+      const sevB = SEVERITY_RANK[(portAnalysis.severityMap.get(b) ?? 'INFO') as ParsedFinding['severity']];
+      if (sevA !== sevB) return sevA - sevB;
+      return a - b;
+    });
+  }, [filteredPorts, sortMode, portAnalysis]);
+
+  const isFiltered = searchQuery || severityFilter.size > 0 || categoryFilter.size > 0 || owaspFilter.size > 0;
 
   const toggleSeverity = useCallback((sev: string) => {
     setSeverityFilter((prev) => {
@@ -161,29 +308,42 @@ export function DiscoveredPorts({ aggregatedPorts }: DiscoveredPortsProps) {
     });
   }, []);
 
+  const toggleOwasp = useCallback((id: string) => {
+    setOwaspFilter((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  }, []);
+
   const clearAllFilters = useCallback(() => {
     setSearchQuery('');
     setSeverityFilter(new Set());
     setCategoryFilter(new Set());
+    setOwaspFilter(new Set());
   }, []);
 
   const handleSearchKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLInputElement>) => {
       if (e.key === 'Enter') {
-        if (filteredPorts.length > 0) {
-          setSelectedPort(filteredPorts[0]);
+        if (sortedPorts.length > 0) {
+          setSelectedPort(sortedPorts[0]);
         }
       } else if (e.key === 'Escape') {
         setSearchQuery('');
         searchInputRef.current?.blur();
       }
     },
-    [filteredPorts],
+    [sortedPorts],
   );
 
   // Ports to display (with expand/collapse for large lists)
   const displayedPorts =
-    filteredPorts.length > 100 && !portsExpanded ? filteredPorts.slice(0, 50) : filteredPorts;
+    sortedPorts.length > 100 && !portsExpanded ? sortedPorts.slice(0, 50) : sortedPorts;
 
   return (
     <Card
@@ -285,6 +445,38 @@ export function DiscoveredPorts({ aggregatedPorts }: DiscoveredPortsProps) {
                 </button>
               )}
             </div>
+
+            {/* OWASP Category Filter Buttons */}
+            {sortedOwaspIds.length > 0 && (
+              <div className="flex items-center flex-wrap gap-1.5">
+                <span className="text-xs text-slate-500 uppercase tracking-wider mr-1">OWASP</span>
+                {sortedOwaspIds.map((id) => {
+                  const isActive = owaspFilter.has(id);
+                  return (
+                    <button
+                      key={id}
+                      onClick={() => toggleOwasp(id)}
+                      className={`inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium transition-all cursor-pointer ${
+                        isActive ? OWASP_BUTTON_STYLES.active : OWASP_BUTTON_STYLES.inactive
+                      }`}
+                    >
+                      {id}
+                      <span className={`text-[10px] ${isActive ? 'opacity-80' : 'opacity-50'}`}>
+                        ({portAnalysis.owaspCounts.get(id) ?? 0})
+                      </span>
+                    </button>
+                  );
+                })}
+                {owaspFilter.size > 0 && (
+                  <button
+                    onClick={() => setOwaspFilter(new Set())}
+                    className="text-xs text-slate-500 hover:text-slate-300 ml-1 transition-colors"
+                  >
+                    Clear
+                  </button>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Summary Stats Bar */}
@@ -296,7 +488,7 @@ export function DiscoveredPorts({ aggregatedPorts }: DiscoveredPortsProps) {
               </span>
               <div className="flex items-center gap-1.5">
                 {SEVERITY_LEVELS.map((sev) => {
-                  const count = filteredPorts.filter((p) => portSeverityMap.get(p) === sev).length;
+                  const count = filteredPorts.filter((p) => portAnalysis.severityMap.get(p) === sev).length;
                   if (count === 0) return null;
                   return (
                     <span
@@ -317,46 +509,92 @@ export function DiscoveredPorts({ aggregatedPorts }: DiscoveredPortsProps) {
             </div>
           )}
 
+          {/* Sort Toggle */}
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-slate-500 uppercase tracking-wider">Sort</span>
+            <div className="inline-flex rounded-md border border-slate-600 overflow-hidden">
+              <button
+                onClick={() => setSortMode('numeric')}
+                className={`px-3 py-1 text-xs font-medium transition-all cursor-pointer ${
+                  sortMode === 'numeric'
+                    ? 'bg-slate-600 text-slate-100'
+                    : 'bg-slate-800/50 text-slate-400 hover:text-slate-300'
+                }`}
+              >
+                Numeric
+              </button>
+              <button
+                onClick={() => setSortMode('risk')}
+                className={`px-3 py-1 text-xs font-medium transition-all cursor-pointer border-l border-slate-600 ${
+                  sortMode === 'risk'
+                    ? 'bg-slate-600 text-slate-100'
+                    : 'bg-slate-800/50 text-slate-400 hover:text-slate-300'
+                }`}
+              >
+                Risk
+              </button>
+            </div>
+          </div>
+
           {/* Port Pills */}
           <div className="flex flex-wrap gap-2">
             {displayedPorts.map((port) => {
               const hasService = aggregatedPorts.services.has(port);
               const hasWebTests = aggregatedPorts.webTests.has(port);
               const isSelected = selectedPort === port;
-              const sev = portSeverityMap.get(port) ?? 'INFO';
+              const sev = portAnalysis.severityMap.get(port) ?? 'INFO';
+              const label = portAnalysis.serviceLabel.get(port);
+              const count = portAnalysis.findingCount.get(port) ?? 0;
+              const isNonStandard = portAnalysis.nonStandard.has(port);
               return (
                 <button
                   key={port}
                   onClick={() => setSelectedPort(isSelected ? null : port)}
-                  className={`inline-flex items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium transition-all cursor-pointer ${
+                  className={`relative inline-flex items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium transition-all cursor-pointer ${
                     isSelected
                       ? 'bg-brand-primary text-white ring-2 ring-brand-primary ring-offset-2 ring-offset-slate-900'
                       : hasService || hasWebTests
-                      ? 'bg-brand-primary/20 text-brand-primary border border-brand-primary/50 hover:bg-brand-primary/30'
-                      : 'bg-slate-700/50 text-slate-300 border border-slate-600 hover:bg-slate-700'
+                      ? `bg-brand-primary/20 text-brand-primary border hover:bg-brand-primary/30 ${
+                          isNonStandard
+                            ? 'border-dashed border-amber-500/60'
+                            : 'border-brand-primary/50'
+                        }`
+                      : `bg-slate-700/50 text-slate-300 border hover:bg-slate-700 ${
+                          isNonStandard
+                            ? 'border-dashed border-amber-500/60'
+                            : 'border-slate-600'
+                        }`
                   }`}
                 >
                   <span className={`inline-block w-2 h-2 rounded-full ${SEVERITY_DOT[sev]} shrink-0`} />
                   {port}
+                  {label && (
+                    <span className="text-[10px] uppercase text-slate-500">{label}</span>
+                  )}
+                  {count > 0 && (
+                    <span className="absolute -top-1.5 -right-1.5 inline-flex items-center justify-center w-4 h-4 rounded-full bg-red-500 text-white text-[10px] font-bold leading-none">
+                      {count}
+                    </span>
+                  )}
                 </button>
               );
             })}
-            {filteredPorts.length > 100 && !portsExpanded && (
+            {sortedPorts.length > 100 && !portsExpanded && (
               <span className="inline-flex items-center text-sm text-slate-400">
-                +{filteredPorts.length - 50} more
+                +{sortedPorts.length - 50} more
               </span>
             )}
-            {filteredPorts.length === 0 && (
+            {sortedPorts.length === 0 && (
               <p className="text-sm text-slate-400">No ports match the current filters.</p>
             )}
           </div>
-          {filteredPorts.length > 100 && (
+          {sortedPorts.length > 100 && (
             <Button
               variant="secondary"
               size="sm"
               onClick={() => setPortsExpanded(!portsExpanded)}
             >
-              {portsExpanded ? 'Show Less' : `Show All ${filteredPorts.length} Ports`}
+              {portsExpanded ? 'Show Less' : `Show All ${sortedPorts.length} Ports`}
             </Button>
           )}
 
