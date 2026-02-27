@@ -141,7 +141,230 @@ export function generateJobReport({
   };
 
   /**
-   * Render LLM analysis markdown content to PDF
+   * Render markdown text content to PDF with inline formatting support.
+   * Handles headers, lists, code blocks, bold, italic, and inline code.
+   */
+  const renderMarkdownContent = (content: string, baseIndent: number = 0): void => {
+    const leftMargin = margin + baseIndent;
+    const availableWidth = contentWidth - baseIndent;
+
+    /**
+     * Render a single line with inline markdown formatting (bold, code, normal).
+     * Splits `**bold**` and `` `code` `` into segments rendered with proper fonts.
+     */
+    const renderInlineLine = (rawLine: string, x: number, maxWidth: number, fontSize: number = 8): void => {
+      // Parse into segments: { text, style: 'normal' | 'bold' | 'code' }
+      type Segment = { text: string; style: 'normal' | 'bold' | 'code' };
+      const segments: Segment[] = [];
+      // Match **bold** or `code` or plain text
+      const re = /(\*\*([^*]+)\*\*|`([^`]+)`)/g;
+      let lastIndex = 0;
+      let match: RegExpExecArray | null;
+      while ((match = re.exec(rawLine)) !== null) {
+        if (match.index > lastIndex) {
+          segments.push({ text: rawLine.slice(lastIndex, match.index), style: 'normal' });
+        }
+        if (match[2] !== undefined) {
+          segments.push({ text: match[2], style: 'bold' });
+        } else if (match[3] !== undefined) {
+          segments.push({ text: match[3], style: 'code' });
+        }
+        lastIndex = re.lastIndex;
+      }
+      if (lastIndex < rawLine.length) {
+        segments.push({ text: rawLine.slice(lastIndex), style: 'normal' });
+      }
+      if (segments.length === 0) return;
+
+      // Check if everything fits on one line
+      let totalWidth = 0;
+      for (const seg of segments) {
+        doc.setFont(seg.style === 'code' ? 'Courier' : 'Helvetica', seg.style === 'bold' ? 'bold' : 'normal');
+        doc.setFontSize(seg.style === 'code' ? fontSize - 1 : fontSize);
+        totalWidth += doc.getTextWidth(seg.text);
+      }
+
+      if (totalWidth <= maxWidth) {
+        // Render inline — all segments on one line
+        let cx = x;
+        for (const seg of segments) {
+          doc.setFont(seg.style === 'code' ? 'Courier' : 'Helvetica', seg.style === 'bold' ? 'bold' : 'normal');
+          doc.setFontSize(seg.style === 'code' ? fontSize - 1 : fontSize);
+          doc.setTextColor(...colors.text);
+          doc.text(seg.text, cx, y);
+          cx += doc.getTextWidth(seg.text);
+        }
+        y += fontSize * 0.5;
+      } else {
+        // Fallback: join as plain text (strip markers), wrap normally
+        const plain = rawLine.replace(/\*\*([^*]+)\*\*/g, '$1').replace(/`([^`]+)`/g, '$1');
+        doc.setFont('Helvetica', 'normal');
+        doc.setFontSize(fontSize);
+        doc.setTextColor(...colors.text);
+        const wrapped = doc.splitTextToSize(plain, maxWidth);
+        wrapped.forEach((wl: string) => {
+          checkPageBreak(4);
+          doc.text(wl, x, y);
+          y += 4;
+        });
+      }
+    };
+
+    const lines = content.split('\n');
+    let inCodeBlock = false;
+    let inList = false;
+
+    for (const line of lines) {
+      // Code block handling
+      if (line.startsWith('```')) {
+        inCodeBlock = !inCodeBlock;
+        if (inCodeBlock) {
+          y += 2;
+          doc.setFillColor(30, 41, 59); // slate-800
+        }
+        continue;
+      }
+
+      if (inCodeBlock) {
+        checkPageBreak(5);
+        doc.setFillColor(30, 41, 59);
+        doc.rect(leftMargin, y - 3, availableWidth, 5, 'F');
+        doc.setFont('Courier', 'normal');
+        doc.setFontSize(7);
+        doc.setTextColor(200, 200, 200);
+        const wrapped = doc.splitTextToSize(line, availableWidth - 10);
+        wrapped.forEach((wl: string) => {
+          doc.text(wl, leftMargin + 5, y);
+          y += 4;
+        });
+        continue;
+      }
+
+      // Headers
+      if (line.startsWith('# ')) {
+        checkPageBreak(12);
+        y += 4;
+        doc.setFontSize(14);
+        doc.setFont('Helvetica', 'bold');
+        doc.setTextColor(...colors.text);
+        const text = line.slice(2).replace(/\*\*/g, '');
+        const wrapped = doc.splitTextToSize(text, availableWidth);
+        wrapped.forEach((wl: string) => {
+          doc.text(wl, leftMargin, y);
+          y += 6;
+        });
+        y += 2;
+        continue;
+      }
+      if (line.startsWith('## ')) {
+        checkPageBreak(10);
+        y += 3;
+        doc.setFontSize(11);
+        doc.setFont('Helvetica', 'bold');
+        doc.setTextColor(...colors.primary);
+        const text = line.slice(3).replace(/\*\*/g, '');
+        const wrapped = doc.splitTextToSize(text, availableWidth);
+        wrapped.forEach((wl: string) => {
+          doc.text(wl, leftMargin, y);
+          y += 5;
+        });
+        // Underline
+        doc.setDrawColor(...colors.light);
+        doc.setLineWidth(0.3);
+        doc.line(leftMargin, y, leftMargin + availableWidth, y);
+        y += 4;
+        continue;
+      }
+      if (line.startsWith('### ')) {
+        checkPageBreak(8);
+        y += 2;
+        doc.setFontSize(10);
+        doc.setFont('Helvetica', 'bold');
+        doc.setTextColor(...colors.secondary);
+        const text = line.slice(4).replace(/\*\*/g, '');
+        const wrapped = doc.splitTextToSize(text, availableWidth);
+        wrapped.forEach((wl: string) => {
+          doc.text(wl, leftMargin, y);
+          y += 4.5;
+        });
+        y += 1;
+        continue;
+      }
+      if (line.startsWith('#### ')) {
+        checkPageBreak(7);
+        y += 1;
+        doc.setFontSize(9);
+        doc.setFont('Helvetica', 'bold');
+        doc.setTextColor(...colors.text);
+        const text = line.slice(5).replace(/\*\*/g, '');
+        const wrapped = doc.splitTextToSize(text, availableWidth);
+        wrapped.forEach((wl: string) => {
+          doc.text(wl, leftMargin, y);
+          y += 4;
+        });
+        continue;
+      }
+
+      // List items
+      if (line.match(/^[-*]\s/)) {
+        checkPageBreak(5);
+        inList = true;
+        doc.setFontSize(8);
+        doc.setFont('Helvetica', 'normal');
+        doc.setTextColor(...colors.text);
+
+        // Check for bold text in list item
+        let text = line.slice(2);
+        const boldMatch = text.match(/^\*\*([^*]+)\*\*:?\s*(.*)/);
+        if (boldMatch) {
+          doc.setFont('Helvetica', 'bold');
+          doc.text('• ' + boldMatch[1] + ':', leftMargin + 5, y);
+          const labelWidth = doc.getTextWidth('• ' + boldMatch[1] + ': ');
+          doc.setFont('Helvetica', 'normal');
+          if (boldMatch[2]) {
+            const wrapped = doc.splitTextToSize(boldMatch[2], availableWidth - 10 - labelWidth);
+            wrapped.forEach((wl: string, idx: number) => {
+              if (idx === 0) {
+                doc.text(wl, leftMargin + 5 + labelWidth, y);
+              } else {
+                y += 4;
+                checkPageBreak(4);
+                doc.text(wl, leftMargin + 10, y);
+              }
+            });
+          }
+        } else {
+          text = text.replace(/\*\*([^*]+)\*\*/g, '$1');
+          const wrapped = doc.splitTextToSize('• ' + text, availableWidth - 5);
+          wrapped.forEach((wl: string, idx: number) => {
+            if (idx > 0) {
+              checkPageBreak(4);
+            }
+            doc.text(wl, leftMargin + 5, y);
+            y += 4;
+          });
+          y -= 4; // Adjust for loop increment
+        }
+        y += 4;
+        continue;
+      }
+
+      // Empty line
+      if (line.trim() === '') {
+        inList = false;
+        y += 3;
+        continue;
+      }
+
+      // Regular paragraph — render with inline bold/code formatting
+      checkPageBreak(5);
+      renderInlineLine(line, leftMargin, availableWidth);
+      y += 1;
+    }
+  };
+
+  /**
+   * Render LLM analysis section: chrome header + markdown content
    */
   const renderLlmAnalysis = (analysis: LlmAnalysis, passNr?: number): void => {
     // Section header with AI icon indicator
@@ -191,173 +414,7 @@ export function generateJobReport({
     doc.text(metaInfo.join('  |  '), margin + 5, y + 4);
     y += 15;
 
-    // Render markdown content
-    const lines = analysis.content.split('\n');
-    let inCodeBlock = false;
-    let inList = false;
-
-    for (const line of lines) {
-      // Code block handling
-      if (line.startsWith('```')) {
-        inCodeBlock = !inCodeBlock;
-        if (inCodeBlock) {
-          y += 2;
-          doc.setFillColor(30, 41, 59); // slate-800
-        }
-        continue;
-      }
-
-      if (inCodeBlock) {
-        checkPageBreak(5);
-        doc.setFillColor(30, 41, 59);
-        doc.rect(margin, y - 3, contentWidth, 5, 'F');
-        doc.setFont('Courier', 'normal');
-        doc.setFontSize(7);
-        doc.setTextColor(200, 200, 200);
-        const wrapped = doc.splitTextToSize(line, contentWidth - 10);
-        wrapped.forEach((wl: string) => {
-          doc.text(wl, margin + 5, y);
-          y += 4;
-        });
-        continue;
-      }
-
-      // Headers
-      if (line.startsWith('# ')) {
-        checkPageBreak(12);
-        y += 4;
-        doc.setFontSize(14);
-        doc.setFont('Helvetica', 'bold');
-        doc.setTextColor(...colors.text);
-        const text = line.slice(2).replace(/\*\*/g, '');
-        const wrapped = doc.splitTextToSize(text, contentWidth);
-        wrapped.forEach((wl: string) => {
-          doc.text(wl, margin, y);
-          y += 6;
-        });
-        y += 2;
-        continue;
-      }
-      if (line.startsWith('## ')) {
-        checkPageBreak(10);
-        y += 3;
-        doc.setFontSize(11);
-        doc.setFont('Helvetica', 'bold');
-        doc.setTextColor(...colors.primary);
-        const text = line.slice(3).replace(/\*\*/g, '');
-        const wrapped = doc.splitTextToSize(text, contentWidth);
-        wrapped.forEach((wl: string) => {
-          doc.text(wl, margin, y);
-          y += 5;
-        });
-        // Underline
-        doc.setDrawColor(...colors.light);
-        doc.setLineWidth(0.3);
-        doc.line(margin, y, pageWidth - margin, y);
-        y += 4;
-        continue;
-      }
-      if (line.startsWith('### ')) {
-        checkPageBreak(8);
-        y += 2;
-        doc.setFontSize(10);
-        doc.setFont('Helvetica', 'bold');
-        doc.setTextColor(...colors.secondary);
-        const text = line.slice(4).replace(/\*\*/g, '');
-        const wrapped = doc.splitTextToSize(text, contentWidth);
-        wrapped.forEach((wl: string) => {
-          doc.text(wl, margin, y);
-          y += 4.5;
-        });
-        y += 1;
-        continue;
-      }
-      if (line.startsWith('#### ')) {
-        checkPageBreak(7);
-        y += 1;
-        doc.setFontSize(9);
-        doc.setFont('Helvetica', 'bold');
-        doc.setTextColor(...colors.text);
-        const text = line.slice(5).replace(/\*\*/g, '');
-        const wrapped = doc.splitTextToSize(text, contentWidth);
-        wrapped.forEach((wl: string) => {
-          doc.text(wl, margin, y);
-          y += 4;
-        });
-        continue;
-      }
-
-      // List items
-      if (line.match(/^[-*]\s/)) {
-        checkPageBreak(5);
-        inList = true;
-        doc.setFontSize(8);
-        doc.setFont('Helvetica', 'normal');
-        doc.setTextColor(...colors.text);
-
-        // Check for bold text in list item
-        let text = line.slice(2);
-        const boldMatch = text.match(/^\*\*([^*]+)\*\*:?\s*(.*)/);
-        if (boldMatch) {
-          doc.setFont('Helvetica', 'bold');
-          doc.text('• ' + boldMatch[1] + ':', margin + 5, y);
-          const labelWidth = doc.getTextWidth('• ' + boldMatch[1] + ': ');
-          doc.setFont('Helvetica', 'normal');
-          if (boldMatch[2]) {
-            const wrapped = doc.splitTextToSize(boldMatch[2], contentWidth - 10 - labelWidth);
-            wrapped.forEach((wl: string, idx: number) => {
-              if (idx === 0) {
-                doc.text(wl, margin + 5 + labelWidth, y);
-              } else {
-                y += 4;
-                checkPageBreak(4);
-                doc.text(wl, margin + 10, y);
-              }
-            });
-          }
-        } else {
-          text = text.replace(/\*\*([^*]+)\*\*/g, '$1');
-          const wrapped = doc.splitTextToSize('• ' + text, contentWidth - 5);
-          wrapped.forEach((wl: string, idx: number) => {
-            if (idx > 0) {
-              checkPageBreak(4);
-            }
-            doc.text(wl, margin + 5, y);
-            y += 4;
-          });
-          y -= 4; // Adjust for loop increment
-        }
-        y += 4;
-        continue;
-      }
-
-      // Empty line
-      if (line.trim() === '') {
-        inList = false;
-        y += 3;
-        continue;
-      }
-
-      // Regular paragraph
-      checkPageBreak(5);
-      doc.setFontSize(8);
-      doc.setFont('Helvetica', 'normal');
-      doc.setTextColor(...colors.text);
-
-      // Handle inline formatting
-      let text = line
-        .replace(/\*\*([^*]+)\*\*/g, '$1') // Remove bold markers (can't do real bold inline easily)
-        .replace(/\*([^*]+)\*/g, '$1')     // Remove italic markers
-        .replace(/`([^`]+)`/g, '$1');       // Remove code markers
-
-      const wrapped = doc.splitTextToSize(text, contentWidth);
-      wrapped.forEach((wl: string) => {
-        checkPageBreak(4);
-        doc.text(wl, margin, y);
-        y += 4;
-      });
-      y += 1;
-    }
+    renderMarkdownContent(analysis.content);
 
     y += 5;
     addDivider();
@@ -499,26 +556,26 @@ export function generateJobReport({
     }
 
     if (bestQuickSummary?.content) {
-      checkPageBreak(25);
-      doc.setFillColor(254, 242, 242); // red-50 — light tint of brand-primary
-      doc.setDrawColor(252, 202, 202); // red-200 — subtle border
-      doc.roundedRect(margin, y, contentWidth, 20, 2, 2, 'FD');
-      y += 5;
-      doc.setFontSize(8);
-      doc.setFont('Helvetica', 'bold');
-      doc.setTextColor(...colors.primary);
-      doc.text('AI SUMMARY', margin + 5, y);
-      y += 5;
+      checkPageBreak(20);
+
+      // Header bar
+      doc.setFillColor(...colors.primary);
+      doc.roundedRect(margin, y, contentWidth, 10, 2, 2, 'F');
+      doc.setTextColor(255, 255, 255);
       doc.setFontSize(9);
-      doc.setFont('Helvetica', 'normal');
-      doc.setTextColor(...colors.text);
-      const summaryWrapped = doc.splitTextToSize(bestQuickSummary.content, contentWidth - 10);
-      summaryWrapped.forEach((line: string) => {
-        checkPageBreak(4);
-        doc.text(line, margin + 5, y);
-        y += 4.5;
-      });
-      y += 5;
+      doc.setFont('Helvetica', 'bold');
+      doc.text('AI Summary', margin + 5, y + 7);
+      y += 14;
+
+      // Content with left accent bar
+      const accentX = margin;
+      const contentStartY = y;
+      renderMarkdownContent(bestQuickSummary.content, 5);
+      // Draw red accent line along the left edge of the content
+      doc.setDrawColor(...colors.primary);
+      doc.setLineWidth(1.5);
+      doc.line(accentX, contentStartY - 2, accentX, y);
+      y += 3;
     }
   }
 

@@ -3,6 +3,7 @@
 import Card from '@/components/ui/Card';
 import type { Job, LlmAnalysis } from '@/lib/api/types';
 import type { AggregatedPortsData } from '../types';
+import { formatInlineMarkdown } from './LlmAnalysis';
 
 interface AggregateFindingsProps {
   job: Job;
@@ -60,7 +61,7 @@ export function AggregateFindings({ job, aggregatedPorts, quickSummary }: Aggreg
                 </svg>
                 <span className="text-xs font-medium text-brand-primary uppercase tracking-wide">AI Summary</span>
               </div>
-              <p className="text-sm text-slate-300 leading-relaxed">{quickSummary.content}</p>
+              <p className="text-sm text-slate-300 leading-relaxed" dangerouslySetInnerHTML={{ __html: formatInlineMarkdown(quickSummary.content) }} />
             </div>
           )}
         </div>

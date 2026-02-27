@@ -154,7 +154,7 @@ function renderMarkdown(content: string): React.ReactNode[] {
 /**
  * Format inline markdown (bold, italic, code, links)
  */
-function formatInlineMarkdown(text: string): string {
+export function formatInlineMarkdown(text: string): string {
   return text
     // Bold
     .replace(/\*\*([^*]+)\*\*/g, '<strong class="font-semibold text-slate-100">$1</strong>')
