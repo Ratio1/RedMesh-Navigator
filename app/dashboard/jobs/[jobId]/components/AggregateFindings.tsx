@@ -4,6 +4,7 @@ import Card from '@/components/ui/Card';
 import type { Job, LlmAnalysis } from '@/lib/api/types';
 import type { AggregatedPortsData } from '../types';
 import { formatInlineMarkdown } from './LlmAnalysis';
+import { RiskScoreBadge } from './RiskScoreBadge';
 
 interface AggregateFindingsProps {
   job: Job;
@@ -31,20 +32,24 @@ export function AggregateFindings({ job, aggregatedPorts, quickSummary }: Aggreg
       ) : (
         <div className="space-y-4">
           {/* Metrics row */}
-          <div className="grid grid-cols-3 gap-4">
-            <div className="text-center p-4 rounded-lg bg-slate-800/50 border border-white/10">
+          <div className={`grid gap-4 ${job.riskScore != null ? 'grid-cols-4' : 'grid-cols-3'}`}>
+            {/* Risk Score — circular gauge */}
+            {job.riskScore != null && (
+              <RiskScoreBadge score={job.riskScore} size="lg" />
+            )}
+            <div className="flex flex-col justify-center text-center p-4 rounded-lg bg-slate-800/50 border border-white/10">
               <div className="text-3xl font-bold text-slate-100">
                 {aggregatedPorts.ports.length}
               </div>
               <div className="text-xs text-slate-400 mt-1">Open Ports</div>
             </div>
-            <div className="text-center p-4 rounded-lg bg-slate-800/50 border border-white/10">
+            <div className="flex flex-col justify-center text-center p-4 rounded-lg bg-slate-800/50 border border-white/10">
               <div className="text-3xl font-bold text-slate-100">
                 {aggregatedPorts.totalServices}
               </div>
               <div className="text-xs text-slate-400 mt-1">Identified Services</div>
             </div>
-            <div className="text-center p-4 rounded-lg bg-amber-500/10 border border-amber-500/30">
+            <div className="flex flex-col justify-center text-center p-4 rounded-lg bg-amber-500/10 border border-amber-500/30">
               <div className="text-3xl font-bold text-amber-400">
                 {aggregatedPorts.totalFindings}
               </div>

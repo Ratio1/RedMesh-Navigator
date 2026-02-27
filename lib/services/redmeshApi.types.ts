@@ -86,6 +86,7 @@ export interface JobSpecs {
   task_name?: string;
   task_description?: string;
   duration?: number;
+  risk_score?: number; // 0-100 risk score (latest pass)
   // Security hardening options
   redact_credentials?: boolean;
   ics_safe_mode?: boolean;
@@ -243,6 +244,15 @@ export interface PassHistoryEntry {
   reports: Record<string, string>; // node_address -> CID mapping
   llm_analysis_cid?: string; // CID for LLM analysis (present for completed passes)
   quick_summary_cid?: string; // CID for quick AI summary (2-4 sentences)
+  risk_score?: number; // 0-100 risk score for this pass
+  risk_breakdown?: {
+    findings_score: number;
+    open_ports_score: number;
+    breadth_score: number;
+    credentials_penalty: number;
+    raw_total: number;
+    finding_counts: Record<string, number>;
+  };
 }
 
 // Stop Monitoring Response

@@ -8,3 +8,4 @@ export { EnabledFeatures } from './EnabledFeatures';
 export { DetailedWorkerReports } from './DetailedWorkerReports';
 export { WorkerReportsHistory } from './WorkerReportsHistory';
 export { LlmAnalysis } from './LlmAnalysis';
+export { RiskScoreBadge } from './RiskScoreBadge';

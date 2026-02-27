@@ -674,6 +674,73 @@ export function generateJobReport({
 
   y += 25;
 
+  // === 3a. RISK SCORE BANNER ===
+  if (job.riskScore != null) {
+    checkPageBreak(22);
+
+    const riskScore = job.riskScore;
+    let riskLabel: string;
+    let riskColor: RGB;
+    let riskBgColor: RGB;
+
+    if (riskScore <= 20) {
+      riskLabel = 'Low Risk';
+      riskColor = [16, 185, 129];    // emerald-500
+      riskBgColor = [236, 253, 245]; // emerald-50
+    } else if (riskScore <= 40) {
+      riskLabel = 'Moderate Risk';
+      riskColor = [234, 179, 8];     // yellow-500
+      riskBgColor = [254, 252, 232]; // yellow-50
+    } else if (riskScore <= 60) {
+      riskLabel = 'Elevated Risk';
+      riskColor = [245, 158, 11];    // amber-500
+      riskBgColor = [255, 251, 235]; // amber-50
+    } else if (riskScore <= 80) {
+      riskLabel = 'High Risk';
+      riskColor = [239, 68, 68];     // red-500
+      riskBgColor = [254, 242, 242]; // red-50
+    } else {
+      riskLabel = 'Critical Risk';
+      riskColor = [185, 28, 28];     // red-700
+      riskBgColor = [254, 226, 226]; // red-100
+    }
+
+    // Banner background
+    doc.setFillColor(...riskBgColor);
+    doc.roundedRect(margin, y, contentWidth, 18, 2, 2, 'F');
+
+    // Left accent bar
+    doc.setFillColor(...riskColor);
+    doc.rect(margin, y, 4, 18, 'F');
+
+    // Score number
+    doc.setFontSize(18);
+    doc.setFont('Helvetica', 'bold');
+    doc.setTextColor(...riskColor);
+    doc.text(String(riskScore), margin + 10, y + 12);
+
+    // "/100" suffix
+    const scoreWidth = doc.getTextWidth(String(riskScore));
+    doc.setFontSize(9);
+    doc.setFont('Helvetica', 'normal');
+    doc.setTextColor(...colors.muted);
+    doc.text('/100', margin + 10 + scoreWidth + 1, y + 12);
+
+    // Risk label
+    doc.setFontSize(11);
+    doc.setFont('Helvetica', 'bold');
+    doc.setTextColor(...riskColor);
+    doc.text(riskLabel, margin + 10 + scoreWidth + doc.getTextWidth('/100') + 8, y + 12);
+
+    // "Risk Score" descriptor
+    doc.setFontSize(7);
+    doc.setFont('Helvetica', 'normal');
+    doc.setTextColor(...colors.muted);
+    doc.text('Risk Score', margin + 10, y + 16);
+
+    y += 22;
+  }
+
   // === 3b. QUICK AI SUMMARY (after stats, before full analysis) ===
   if (quickSummaries) {
     let bestQuickSummary: LlmAnalysis | undefined;

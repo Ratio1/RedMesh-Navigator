@@ -15,7 +15,8 @@ import {
   JobTempo,
   JobTempoSteps,
   JobWorkerStatus,
-  PassHistoryEntry
+  PassHistoryEntry,
+  RiskBreakdown
 } from './types';
 import { RUN_MODE, DURATION, JOB_STATUS } from './constants';
 import { createMockJob, getAvailableFeatures, getMockJobs } from './mockData';
@@ -317,6 +318,16 @@ function normalizeJobFromSpecs(specs: JobSpecs): Job {
   // Normalize pass_history to UI format (support both legacy completed_at and new date_completed)
   const passHistory: PassHistoryEntry[] | undefined = specs.pass_history?.map((entry) => {
     const completedTs = entry.date_completed ?? entry.completed_at;
+    const riskBreakdown: RiskBreakdown | undefined = entry.risk_breakdown
+      ? {
+          findingsScore: entry.risk_breakdown.findings_score,
+          openPortsScore: entry.risk_breakdown.open_ports_score,
+          breadthScore: entry.risk_breakdown.breadth_score,
+          credentialsPenalty: entry.risk_breakdown.credentials_penalty,
+          rawTotal: entry.risk_breakdown.raw_total,
+          findingCounts: entry.risk_breakdown.finding_counts,
+        }
+      : undefined;
     return {
       passNr: entry.pass_nr,
       startedAt: entry.date_started
@@ -328,7 +339,9 @@ function normalizeJobFromSpecs(specs: JobSpecs): Job {
       duration: entry.duration ?? undefined,
       reports: entry.reports,
       llmAnalysisCid: entry.llm_analysis_cid,
-      quickSummaryCid: entry.quick_summary_cid
+      quickSummaryCid: entry.quick_summary_cid,
+      riskScore: entry.risk_score,
+      riskBreakdown,
     };
   });
 
@@ -371,7 +384,8 @@ function normalizeJobFromSpecs(specs: JobSpecs): Job {
       : undefined,
     tempoSteps: undefined,
     passHistory,
-    totalDuration: specs.duration ?? undefined
+    totalDuration: specs.duration ?? undefined,
+    riskScore: specs.risk_score,
   };
 }
 

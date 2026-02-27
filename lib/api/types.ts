@@ -69,6 +69,17 @@ export interface PassHistoryEntry {
   reports: Record<string, string>; // node_address -> CID mapping
   llmAnalysisCid?: string; // CID for LLM analysis report (present for completed passes)
   quickSummaryCid?: string; // CID for quick AI summary (2-4 sentences)
+  riskScore?: number; // 0-100 risk score for this pass
+  riskBreakdown?: RiskBreakdown;
+}
+
+export interface RiskBreakdown {
+  findingsScore: number;
+  openPortsScore: number;
+  breadthScore: number;
+  credentialsPenalty: number;
+  rawTotal: number;
+  findingCounts: Record<string, number>;
 }
 
 export interface LlmAnalysis {
@@ -142,6 +153,7 @@ export interface Job {
   tempoSteps?: JobTempoSteps;
   passHistory?: PassHistoryEntry[];
   totalDuration?: number; // overall job duration in seconds
+  riskScore?: number; // 0-100 risk score (latest pass)
 }
 
 export interface CreateJobInput {
