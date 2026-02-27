@@ -7,6 +7,7 @@ import Button from '@/components/ui/Button';
 import Badge from '@/components/ui/Badge';
 import CopyableText from '@/components/ui/CopyableText';
 import type { Job, WorkerReport, PassHistoryEntry, LlmAnalysis } from '@/lib/api/types';
+import { RUN_MODE } from '@/lib/api/constants';
 import { LlmAnalysis as LlmAnalysisComponent } from './LlmAnalysis';
 
 function formatDate(value?: string): string {
@@ -16,6 +17,17 @@ function formatDate(value?: string): string {
   } catch {
     return value;
   }
+}
+
+function formatDuration(seconds?: number): string {
+  if (seconds == null || seconds < 0) return '';
+  if (seconds < 60) return `${Math.round(seconds)}s`;
+  const m = Math.floor(seconds / 60);
+  const s = Math.round(seconds % 60);
+  if (m < 60) return s > 0 ? `${m}m ${s}s` : `${m}m`;
+  const h = Math.floor(m / 60);
+  const rm = m % 60;
+  return rm > 0 ? `${h}h ${rm}m` : `${h}h`;
 }
 
 interface WorkerReportsHistoryProps {
@@ -47,6 +59,8 @@ export function WorkerReportsHistory({ job, reports, llmAnalyses }: WorkerReport
     URL.revokeObjectURL(url);
   };
 
+  const isContinuous = job.runMode === RUN_MODE.CONTINUOUS;
+
   return (
     <Card
       title={
@@ -63,31 +77,38 @@ export function WorkerReportsHistory({ job, reports, llmAnalyses }: WorkerReport
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
           </svg>
           <span>Worker Reports</span>
-          <span className="text-xs text-slate-500 font-normal">
-            ({job.passHistory.length} pass{job.passHistory.length !== 1 ? 'es' : ''})
-          </span>
+          {isContinuous && (
+            <span className="text-xs text-slate-500 font-normal">
+              ({job.passHistory.length} pass{job.passHistory.length !== 1 ? 'es' : ''})
+            </span>
+          )}
         </button>
       }
       description={workerReportsExpanded ? "Detailed scan results from each worker node" : undefined}
     >
       {!workerReportsExpanded ? (
         <p className="text-sm text-slate-400">
-          Click to expand and view detailed reports from each pass.
+          Click to expand and view detailed reports{isContinuous ? ' from each pass' : ''}.
         </p>
       ) : (
         <div className="space-y-6">
           {job.passHistory.map((pass) => (
             <div key={pass.passNr} className="space-y-4">
-              <div className="flex items-center justify-between border-b border-white/10 pb-2">
-                <h4 className="text-sm font-semibold text-slate-100">
-                  Pass #{pass.passNr}
-                </h4>
-                <span className="text-xs text-slate-400">
-                  Completed: {formatDate(pass.completedAt)}
-                </span>
-              </div>
-              {/* LLM Analysis for this pass (continuous mode) */}
-              {llmAnalyses && llmAnalyses[pass.passNr] && (
+              {isContinuous && (
+                <div className="flex items-center justify-between border-b border-white/10 pb-2">
+                  <h4 className="text-sm font-semibold text-slate-100">
+                    Pass #{pass.passNr}
+                  </h4>
+                  <span className="text-xs text-slate-400">
+                    Completed: {formatDate(pass.completedAt)}
+                    {pass.duration != null && (
+                      <span className="ml-2 text-emerald-400">({formatDuration(pass.duration)})</span>
+                    )}
+                  </span>
+                </div>
+              )}
+              {/* LLM Analysis for this pass (continuous mode only — singlepass shows it at job level) */}
+              {isContinuous && llmAnalyses && llmAnalyses[pass.passNr] && (
                 <div className="mb-4">
                   <LlmAnalysisComponent
                     analysis={llmAnalyses[pass.passNr]}
@@ -132,14 +153,6 @@ export function WorkerReportsHistory({ job, reports, llmAnalyses }: WorkerReport
 
                       {report ? (
                         <div className={`mt-3 space-y-3 ${!isExpanded ? 'hidden' : ''}`}>
-                          {/* Worker ID and Target */}
-                          <div className="text-xs">
-                            <span className="text-slate-400">Worker ID:</span>{' '}
-                            <span className="text-slate-200">
-                              {report.localWorkerId}
-                            </span>
-                          </div>
-
                           {/* Stats Grid */}
                           <div className="grid grid-cols-2 gap-2 text-xs">
                             <div>

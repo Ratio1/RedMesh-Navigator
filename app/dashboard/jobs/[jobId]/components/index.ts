@@ -4,6 +4,8 @@ export { JobMeta } from './JobMeta';
 export { DiscoveredPorts } from './DiscoveredPorts';
 export { WorkerActivityTable } from './WorkerActivityTable';
 export { JobTimeline } from './JobTimeline';
+export { EnabledFeatures } from './EnabledFeatures';
 export { DetailedWorkerReports } from './DetailedWorkerReports';
 export { WorkerReportsHistory } from './WorkerReportsHistory';
 export { LlmAnalysis } from './LlmAnalysis';
+export { RiskScoreBadge } from './RiskScoreBadge';

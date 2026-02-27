@@ -34,7 +34,8 @@ export async function GET(request: Request, { params }: RouteParams) {
       return NextResponse.json({
         job: result.job,
         reports: result.reports,
-        llmAnalyses: result.llmAnalyses ?? {}
+        llmAnalyses: result.llmAnalyses ?? {},
+        quickSummaries: result.quickSummaries ?? {}
       }, { status: 200 });
     }
 

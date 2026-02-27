@@ -1,10 +1,12 @@
 import { ApiError, ensure } from './errors';
 import {
+  ActorType,
   CreateJobInput,
   Job,
   JobAggregateReport,
   JobDistribution,
   JobDuration,
+  JobEventType,
   JobPortOrder,
   JobPriority,
   JobRunMode,
@@ -13,8 +15,10 @@ import {
   JobTempo,
   JobTempoSteps,
   JobWorkerStatus,
-  PassHistoryEntry
+  PassHistoryEntry,
+  RiskBreakdown
 } from './types';
+import { RUN_MODE, DURATION, JOB_STATUS } from './constants';
 import { createMockJob, getAvailableFeatures, getMockJobs } from './mockData';
 import { getAppConfig } from '../config/env';
 import { getDefaultFeatureCatalog } from '../domain/features';
@@ -42,29 +46,27 @@ function coerceArray<T>(value: unknown): T[] {
   return [value as T];
 }
 
-function extractTimeline(raw: any): JobTimelineEntry[] {
-  const source = coerceArray<any>(raw?.timeline ?? raw?.events);
-  const mapped = source
-    .filter((entry) => entry)
-    .map((entry) => {
-      const label = entry.label || entry.event || entry.state || 'Status changed';
-      const ts = entry.at || entry.timestamp || entry.time || entry.date;
-      const when = ts ? new Date(ts) : undefined;
-      return when
-        ? { label, at: when.toISOString() }
-        : { label, at: new Date().toISOString() };
-    });
-
-  if (mapped.length === 0) {
-    return [
-      {
-        label: 'Job registered',
-        at: new Date().toISOString()
-      }
-    ];
+function mapTimelineFromBackend(
+  rawTimeline: Array<{ type: string; label: string; date: number; actor: string; actor_type: string; meta?: Record<string, unknown> }> | undefined
+): JobTimelineEntry[] {
+  if (!rawTimeline || rawTimeline.length === 0) {
+    return [];
   }
+  return rawTimeline.map((entry) => ({
+    type: entry.type as JobEventType,
+    label: entry.label,
+    date: new Date(entry.date * 1000).toISOString(),
+    actor: entry.actor,
+    actorType: (entry.actor_type ?? 'system') as ActorType,
+    meta: entry.meta,
+  }));
+}
 
-  return mapped.sort((a, b) => a.at.localeCompare(b.at));
+/**
+ * Find the first timeline entry matching a given event type.
+ */
+export function getEvent(timeline: JobTimelineEntry[], eventType: JobEventType): JobTimelineEntry | undefined {
+  return timeline.find((e) => e.type === eventType);
 }
 
 function normalizeWorker(id: string, payload: any): JobWorkerStatus {
@@ -90,16 +92,16 @@ function normalizeWorker(id: string, payload: any): JobWorkerStatus {
 function deriveStatus(raw: any): JobStatus {
   const explicit = (raw?.status ?? raw?.state ?? '').toString().toLowerCase();
   if (['running', 'in_progress', 'in-progress'].includes(explicit)) {
-    return 'running';
+    return JOB_STATUS.RUNNING;
   }
   if (['stopping', 'scheduled_for_stop', 'scheduled-for-stop'].includes(explicit)) {
-    return 'stopping';
+    return JOB_STATUS.STOPPING;
   }
   if (['stopped'].includes(explicit)) {
-    return 'stopped';
+    return JOB_STATUS.STOPPED;
   }
   if (['completed', 'done', 'success', 'finalized'].includes(explicit)) {
-    return 'completed';
+    return JOB_STATUS.COMPLETED;
   }
 
   // Derive from worker states if no explicit status
@@ -107,12 +109,12 @@ function deriveStatus(raw: any): JobStatus {
   if (workers && typeof workers === 'object') {
     const workerList = Object.values(workers) as any[];
     if (workerList.length && workerList.every((worker) => worker?.finished || worker?.done)) {
-      return 'completed';
+      return JOB_STATUS.COMPLETED;
     }
   }
 
   // Default: jobs start as running
-  return 'running';
+  return JOB_STATUS.RUNNING;
 }
 
 function normalizeAggregate(raw: any): JobAggregateReport | undefined {
@@ -140,10 +142,10 @@ function normalizeDistribution(value: unknown): JobDistribution {
 function normalizeDuration(value: unknown): JobDuration {
   const normalized = value?.toString().toLowerCase() ?? '';
   if (['continuous', 'monitor', 'monitoring', 'loop'].includes(normalized)) {
-    return 'continuous';
+    return DURATION.CONTINUOUS;
   }
 
-  return 'singlepass';
+  return DURATION.SINGLEPASS;
 }
 
 function normalizeTempo(raw: any): JobTempo | undefined {
@@ -206,10 +208,6 @@ function normalizeJob(raw: any): Job {
   ensure(id, 500, 'Job payload missing identifier.');
 
   const status = deriveStatus(raw);
-  const createdAt = raw.created_at ?? raw.createdAt ?? new Date().toISOString();
-  const updatedAt = raw.updated_at ?? raw.updatedAt ?? createdAt;
-  const startedAt = raw.started_at ?? raw.startedAt;
-  const completedAt = raw.completed_at ?? raw.completedAt;
 
   const workersPayload = raw.workers && typeof raw.workers === 'object' ? raw.workers : {};
   const workers = Object.entries(workersPayload).map(([workerId, payload]) =>
@@ -217,7 +215,7 @@ function normalizeJob(raw: any): Job {
   );
 
   const aggregate = normalizeAggregate(raw.aggregate ?? raw.result ?? raw.report);
-  const timeline = extractTimeline(raw);
+  const timeline = mapTimelineFromBackend(raw.timeline);
   const tempoPayload =
     raw.tempo ??
     raw.test_tempo ??
@@ -243,11 +241,7 @@ function normalizeJob(raw: any): Job {
     initiator: raw.launcher ?? raw.initiator ?? raw.owner ?? 'unknown',
     status,
     summary: raw.summary ?? raw.description ?? 'No summary provided.',
-    createdAt,
-    updatedAt,
-    startedAt,
-    completedAt,
-    owner: raw.owner ?? raw.launcher,
+
     payloadUri: raw.payload_uri ?? raw.payloadUri,
     priority: normalizePriority(raw.priority ?? raw.jobPriority ?? 'medium'),
     workerCount: workers.length || Number(raw.worker_count ?? raw.nrWorkers ?? 0),
@@ -282,17 +276,7 @@ function normalizePriority(value: unknown): JobPriority {
  * This handles the specific field mappings from the actual API response format.
  */
 function normalizeJobFromSpecs(specs: JobSpecs): Job {
-  const createdAt = specs.date_created
-    ? new Date(specs.date_created * 1000).toISOString()
-    : new Date().toISOString();
-
-  const updatedAt = specs.date_updated
-    ? new Date(specs.date_updated * 1000).toISOString()
-    : createdAt;
-
-  const finalizedAt = specs.date_finalized
-    ? new Date(specs.date_finalized * 1000).toISOString()
-    : undefined;
+  const timeline = mapTimelineFromBackend(specs.timeline);
 
   // Transform workers from Record<string, WorkerAssignment> to JobWorkerStatus[]
   const workers = Object.entries(specs.workers).map(([workerId, assignment]) => ({
@@ -310,45 +294,56 @@ function normalizeJobFromSpecs(specs: JobSpecs): Job {
   }));
 
   // Derive status from job_status field
-  let status: JobStatus = 'running'; // Jobs start as running
+  let status: JobStatus = JOB_STATUS.RUNNING; // Jobs start as running
   const jobStatus = specs.job_status?.toUpperCase();
   if (jobStatus === 'FINALIZED') {
-    status = 'completed';
+    status = JOB_STATUS.COMPLETED;
   } else if (jobStatus === 'RUNNING') {
-    status = 'running';
+    status = JOB_STATUS.RUNNING;
   } else if (jobStatus === 'SCHEDULED_FOR_STOP') {
-    status = 'stopping';
+    status = JOB_STATUS.STOPPING;
   } else if (jobStatus === 'STOPPED') {
-    status = 'stopped';
-  }
-
-  // Generate timeline from timestamps
-  const timeline: JobTimelineEntry[] = [
-    { label: 'Job created', at: createdAt }
-  ];
-  if (status === 'running' || status === 'stopping' || status === 'completed' || status === 'stopped') {
-    timeline.push({ label: 'Job started', at: createdAt });
-  }
-  if (finalizedAt) {
-    timeline.push({ label: 'Job finalized', at: finalizedAt });
+    status = JOB_STATUS.STOPPED;
   }
 
   // Map distribution_strategy to UI format
   const distribution: JobDistribution = specs.distribution_strategy === 'MIRROR' ? 'mirror' : 'slice';
 
   // Map run_mode to UI format
-  const runMode: JobRunMode = specs.run_mode === 'CONTINUOUS_MONITORING' ? 'continuous' : 'singlepass';
+  const runMode: JobRunMode = specs.run_mode === 'CONTINUOUS_MONITORING' ? RUN_MODE.CONTINUOUS : RUN_MODE.SINGLEPASS;
 
   // Map port_order to UI format
   const portOrder: JobPortOrder = specs.port_order?.toLowerCase() === 'random' ? 'random' : 'sequential';
 
-  // Normalize pass_history to UI format
-  const passHistory: PassHistoryEntry[] | undefined = specs.pass_history?.map((entry) => ({
-    passNr: entry.pass_nr,
-    completedAt: new Date(entry.completed_at * 1000).toISOString(),
-    reports: entry.reports,
-    llmAnalysisCid: entry.llm_analysis_cid
-  }));
+  // Normalize pass_history to UI format (support both legacy completed_at and new date_completed)
+  const passHistory: PassHistoryEntry[] | undefined = specs.pass_history?.map((entry) => {
+    const completedTs = entry.date_completed ?? entry.completed_at;
+    const riskBreakdown: RiskBreakdown | undefined = entry.risk_breakdown
+      ? {
+          findingsScore: entry.risk_breakdown.findings_score,
+          openPortsScore: entry.risk_breakdown.open_ports_score,
+          breadthScore: entry.risk_breakdown.breadth_score,
+          credentialsPenalty: entry.risk_breakdown.credentials_penalty,
+          rawTotal: entry.risk_breakdown.raw_total,
+          findingCounts: entry.risk_breakdown.finding_counts,
+        }
+      : undefined;
+    return {
+      passNr: entry.pass_nr,
+      startedAt: entry.date_started
+        ? new Date(entry.date_started * 1000).toISOString()
+        : undefined,
+      completedAt: completedTs
+        ? new Date(completedTs * 1000).toISOString()
+        : new Date().toISOString(),
+      duration: entry.duration ?? undefined,
+      reports: entry.reports,
+      llmAnalysisCid: entry.llm_analysis_cid,
+      quickSummaryCid: entry.quick_summary_cid,
+      riskScore: entry.risk_score,
+      riskBreakdown,
+    };
+  });
 
   // Next pass at (for continuous monitoring)
   const nextPassAt = specs.next_pass_at
@@ -364,12 +359,7 @@ function normalizeJobFromSpecs(specs: JobSpecs): Job {
     initiatorAlias: specs.launcher_alias,
     status,
     summary: specs.task_description || 'RedMesh scan job',
-    createdAt,
-    updatedAt,
-    startedAt: createdAt,
-    completedAt: finalizedAt,
-    finalizedAt,
-    owner: specs.launcher,
+
     payloadUri: undefined,
     priority: 'medium',
     workerCount: workers.length,
@@ -393,7 +383,9 @@ function normalizeJobFromSpecs(specs: JobSpecs): Job {
       ? { minSeconds: specs.scan_min_delay, maxSeconds: specs.scan_max_delay }
       : undefined,
     tempoSteps: undefined,
-    passHistory
+    passHistory,
+    totalDuration: specs.duration ?? undefined,
+    riskScore: specs.risk_score,
   };
 }
 
@@ -418,9 +410,7 @@ export function normalizeJobStatusResponse(response: GetJobStatusResponse): Job 
     summary: 'RedMesh scan job',
     initiator: 'unknown',
     priority: 'medium',
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-    timeline: [{ label: 'Status checked', at: new Date().toISOString() }],
+    timeline: [],
     exceptionPorts: [],
     featureSet: []
   };
@@ -442,7 +432,7 @@ export function normalizeJobStatusResponse(response: GetJobStatusResponse): Job 
 
     return {
       ...baseJob,
-      status: 'running',
+      status: JOB_STATUS.RUNNING,
       workerCount: workers.length,
       workers
     } as Job;
@@ -468,9 +458,9 @@ export function normalizeJobStatusResponse(response: GetJobStatusResponse): Job 
 
       // Merge web test findings for aggregate summary
       for (const [port, testResults] of Object.entries(report.web_tests_info)) {
-        const results = testResults as Record<string, string>;
+        const results = testResults as Record<string, unknown>;
         for (const [testId, result] of Object.entries(results)) {
-          if (result && !result.startsWith('ERROR:')) {
+          if (typeof result === 'string' && result && !result.startsWith('ERROR:')) {
             webFindings[`${port}:${testId}`] = result;
           }
         }
@@ -512,8 +502,7 @@ export function normalizeJobStatusResponse(response: GetJobStatusResponse): Job 
 
     return {
       ...baseJob,
-      status: 'completed',
-      completedAt: new Date().toISOString(),
+      status: JOB_STATUS.COMPLETED,
       workerCount: workers.length,
       workers,
       aggregate: {
@@ -562,13 +551,22 @@ function createJobInputToLaunchRequest(input: CreateJobInput): LaunchTestRequest
     distribution_strategy: input.distribution === 'mirror' ? 'MIRROR' : 'SLICE',
     port_order: 'SEQUENTIAL',
     excluded_features: excludedFeatures?.length ? excludedFeatures : undefined,
-    run_mode: input.duration === 'continuous' ? 'CONTINUOUS_MONITORING' : 'SINGLEPASS',
-    monitor_interval: input.duration === 'continuous' ? input.monitorInterval : undefined,
+    run_mode: input.duration === DURATION.CONTINUOUS ? 'CONTINUOUS_MONITORING' : 'SINGLEPASS',
+    monitor_interval: input.duration === DURATION.CONTINUOUS ? input.monitorInterval : undefined,
     scan_min_delay: input.scanDelay?.minSeconds,
     scan_max_delay: input.scanDelay?.maxSeconds,
     task_name: input.name || undefined,
     task_description: input.summary || undefined,
-    selected_peers: input.selectedPeers?.length ? input.selectedPeers : undefined
+    selected_peers: input.selectedPeers?.length ? input.selectedPeers : undefined,
+    // Security hardening options
+    redact_credentials: input.redactCredentials,
+    ics_safe_mode: input.icsSafeMode,
+    rate_limit_enabled: input.rateLimitEnabled,
+    scanner_identity: input.scannerIdentity || undefined,
+    scanner_user_agent: input.scannerUserAgent || undefined,
+    authorized: input.authorized,
+    created_by_name: input.createdByName || undefined,
+    created_by_id: input.createdById || undefined
   };
 }
 
@@ -601,12 +599,12 @@ export async function fetchJobs(authToken?: string): Promise<Job[]> {
 
 export async function createJob(
   input: CreateJobInput,
-  options: { authToken?: string; owner?: string }
+  options: { authToken?: string }
 ): Promise<Job> {
   const config = getAppConfig();
 
   if (config.mockMode || config.forceMockTasks) {
-    return createMockJob(input, options.owner);
+    return createMockJob(input);
   }
 
   if (!config.redmeshApiUrl) {
@@ -702,6 +700,22 @@ function extractLlmAnalysisCidsFromJob(job: Job): Record<number, string> {
 }
 
 /**
+ * Extract quick summary CIDs from a single job's pass_history
+ * Returns a mapping of passNr -> quickSummaryCid
+ */
+function extractQuickSummaryCidsFromJob(job: Job): Record<number, string> {
+  const cids: Record<number, string> = {};
+  if (job.passHistory) {
+    for (const pass of job.passHistory) {
+      if (pass.quickSummaryCid) {
+        cids[pass.passNr] = pass.quickSummaryCid;
+      }
+    }
+  }
+  return cids;
+}
+
+/**
  * Fetch a single job with its report content from R1FS.
  * Uses get_job_data as the primary endpoint for job specs and pass_history.
  * Falls back to get_job_status for real-time worker data (service_info, web_tests_info).
@@ -713,6 +727,8 @@ export async function fetchJobWithReports(jobId: string): Promise<{
   workerResults?: Job['workers'];
   /** LLM analysis content for each pass (passNr -> analysis) */
   llmAnalyses?: Record<number, Record<string, unknown>>;
+  /** Quick AI summaries for each pass (passNr -> analysis) */
+  quickSummaries?: Record<number, Record<string, unknown>>;
 } | null> {
   const config = getAppConfig();
 
@@ -762,6 +778,10 @@ export async function fetchJobWithReports(jobId: string): Promise<{
     const llmAnalysisCids = extractLlmAnalysisCidsFromJob(job);
     const llmAnalyses: Record<number, Record<string, unknown>> = {};
 
+    // Extract and fetch quick summaries for each pass
+    const quickSummaryCids = extractQuickSummaryCidsFromJob(job);
+    const quickSummaries: Record<number, Record<string, unknown>> = {};
+
     const llmFetchPromises = Object.entries(llmAnalysisCids).map(async ([passNrStr, cid]) => {
       const passNr = parseInt(passNrStr, 10);
       const analysis = await fetchLlmAnalysisByCid(cid);
@@ -769,7 +789,16 @@ export async function fetchJobWithReports(jobId: string): Promise<{
         llmAnalyses[passNr] = analysis;
       }
     });
-    await Promise.all(llmFetchPromises);
+
+    const quickSummaryFetchPromises = Object.entries(quickSummaryCids).map(async ([passNrStr, cid]) => {
+      const passNr = parseInt(passNrStr, 10);
+      const summary = await fetchLlmAnalysisByCid(cid);
+      if (summary) {
+        quickSummaries[passNr] = summary;
+      }
+    });
+
+    await Promise.all([...llmFetchPromises, ...quickSummaryFetchPromises]);
 
     // For completed/running jobs, also fetch get_job_status for worker-level details
     // This provides service_info, web_tests_info, open_ports from workers
@@ -806,7 +835,7 @@ export async function fetchJobWithReports(jobId: string): Promise<{
       job.workerCount = workerResults.length;
     }
 
-    return { job, reports, workerResults, llmAnalyses };
+    return { job, reports, workerResults, llmAnalyses, quickSummaries };
   } catch (error) {
     console.error(`[fetchJobWithReports] Error fetching job ${jobId}:`, error);
     if (error instanceof ApiError) {

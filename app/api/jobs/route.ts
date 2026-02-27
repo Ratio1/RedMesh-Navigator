@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { fetchJobs, fetchJobsWithReports, createJob } from '@/lib/api/jobs';
 import { ApiError } from '@/lib/api/errors';
 import { CreateJobInput } from '@/lib/api/types';
+import { DURATION } from '@/lib/api/constants';
 import { jobsLogger } from '@/lib/services/logger';
 
 export async function GET(request: Request) {
@@ -80,7 +81,7 @@ export async function POST(request: Request) {
     ? body.features.filter((value: unknown) => typeof value === 'string')
     : undefined;
 
-  const duration = body.duration === 'continuous' ? 'continuous' : 'singlepass';
+  const duration = body.duration === DURATION.CONTINUOUS ? DURATION.CONTINUOUS : DURATION.SINGLEPASS;
   const distribution = body.distribution === 'mirror' ? 'mirror' : 'slice';
 
   // Parse scan delay (dune sand walking) - accepts both scanDelay and tempo for backwards compatibility
@@ -114,7 +115,7 @@ export async function POST(request: Request) {
     ? Number(monitorIntervalRaw)
     : undefined;
 
-  if (duration === 'continuous' && monitorInterval !== undefined && (monitorInterval < 1 || !Number.isInteger(monitorInterval))) {
+  if (duration === DURATION.CONTINUOUS && monitorInterval !== undefined && (monitorInterval < 1 || !Number.isInteger(monitorInterval))) {
     return NextResponse.json(
       { message: 'Monitor interval must be a positive integer (seconds between passes).' },
       { status: 400 }
@@ -125,6 +126,21 @@ export async function POST(request: Request) {
   const selectedPeers: string[] | undefined = Array.isArray(body.selectedPeers)
     ? body.selectedPeers.filter((value: unknown) => typeof value === 'string' && value.trim())
     : undefined;
+
+  // Security hardening options
+  if (body.authorized !== true) {
+    return NextResponse.json(
+      { message: 'Authorization confirmation is required to launch a scan.' },
+      { status: 400 }
+    );
+  }
+  const redactCredentials = body.redactCredentials !== false;
+  const icsSafeMode = body.icsSafeMode !== false;
+  const rateLimitEnabled = body.rateLimitEnabled !== false;
+  const scannerIdentity = typeof body.scannerIdentity === 'string' ? body.scannerIdentity.trim() : '';
+  const scannerUserAgent = typeof body.scannerUserAgent === 'string' ? body.scannerUserAgent.trim() : '';
+  const createdByName = typeof body.createdByName === 'string' ? body.createdByName.trim() : '';
+  const createdById = typeof body.createdById === 'string' ? body.createdById.trim() : '';
 
   const payload: CreateJobInput = {
     name: body.name,
@@ -143,14 +159,22 @@ export async function POST(request: Request) {
     distribution,
     duration,
     scanDelay,
-    monitorInterval: duration === 'continuous' ? monitorInterval : undefined,
-    selectedPeers
+    monitorInterval: duration === DURATION.CONTINUOUS ? monitorInterval : undefined,
+    selectedPeers,
+    redactCredentials,
+    icsSafeMode,
+    rateLimitEnabled,
+    scannerIdentity: scannerIdentity || undefined,
+    scannerUserAgent: scannerUserAgent || undefined,
+    authorized: true,
+    createdByName: createdByName || undefined,
+    createdById: createdById || undefined
   };
 
   jobsLogger.debug('Calling createJob with payload:', payload);
 
   try {
-    const job = await createJob(payload, { authToken: token, owner: body.owner });
+    const job = await createJob(payload, { authToken: token });
     jobsLogger.debug('Job created successfully:', job);
     return NextResponse.json({ job }, { status: 201 });
   } catch (error) {

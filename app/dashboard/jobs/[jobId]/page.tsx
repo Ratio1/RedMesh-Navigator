@@ -12,7 +12,7 @@ import Button from '@/components/ui/Button';
 import Loader from '@/components/ui/Loader';
 
 // Local hooks
-import { useAggregatedPorts, useWorkerActivity, useMergedWorkers } from './hooks';
+import { useAggregatedPorts, useWorkerActivity } from './hooks';
 
 // Local components
 import {
@@ -22,6 +22,7 @@ import {
   DiscoveredPorts,
   WorkerActivityTable,
   JobTimeline,
+  EnabledFeatures,
   DetailedWorkerReports,
   WorkerReportsHistory,
   LlmAnalysis,
@@ -34,7 +35,7 @@ export default function JobDetailsPage(): JSX.Element {
   const params = useParams<{ jobId: string }>();
   const router = useRouter();
   const { user, loading } = useAuth();
-  const { job, reports, llmAnalyses, refresh, loading: jobLoading, error: jobError, notFound } = useJob(params.jobId);
+  const { job, reports, llmAnalyses, quickSummaries, refresh, loading: jobLoading, error: jobError, notFound } = useJob(params.jobId);
   const { stopJob, stopMonitoring, loading: actionLoading } = useJobActions();
 
   const [stopping, setStopping] = useState(false);
@@ -43,7 +44,6 @@ export default function JobDetailsPage(): JSX.Element {
   // Derived data
   const aggregatedPorts = useAggregatedPorts(reports, job);
   const workerActivity = useWorkerActivity(reports);
-  const mergedWorkers = useMergedWorkers(job, reports);
 
   // Event handlers
   const handleStopJob = async () => {
@@ -96,6 +96,7 @@ export default function JobDetailsPage(): JSX.Element {
       aggregatedPorts,
       workerActivity,
       llmAnalyses,
+      quickSummaries,
     });
   };
 
@@ -167,29 +168,14 @@ export default function JobDetailsPage(): JSX.Element {
         />
 
         <section className="grid gap-6 lg:grid-cols-3">
-          <AggregateFindings job={job} aggregatedPorts={aggregatedPorts} />
+          <AggregateFindings job={job} aggregatedPorts={aggregatedPorts} quickSummary={quickSummaries[1]} />
           <JobMeta job={job} workerActivity={workerActivity} />
         </section>
 
-        {/* LLM Analysis for singlepass jobs - show above discovered ports */}
-        {job.runMode === 'singlepass' && llmAnalyses[1] && (
-          <section>
-            <LlmAnalysis analysis={llmAnalyses[1]} />
-          </section>
-        )}
-
-        <section>
-          <DiscoveredPorts aggregatedPorts={aggregatedPorts} />
-        </section>
-
         <section className="grid gap-6 lg:grid-cols-2">
-          <WorkerActivityTable workerActivity={workerActivity} />
           <JobTimeline timeline={job.timeline} />
+          <EnabledFeatures features={job.featureSet ?? []} />
         </section>
-
-        <DetailedWorkerReports mergedWorkers={mergedWorkers} />
-
-        <WorkerReportsHistory job={job} reports={reports} llmAnalyses={llmAnalyses} />
 
         <Card
           title="Download report"
@@ -204,6 +190,22 @@ export default function JobDetailsPage(): JSX.Element {
             Download a summary of this task including timeline, worker activity, and aggregate findings.
           </p>
         </Card>
+
+        <section>
+          <DiscoveredPorts aggregatedPorts={aggregatedPorts} />
+        </section>
+
+        {job.runMode === 'singlepass' && llmAnalyses[1] && (
+          <section>
+            <LlmAnalysis analysis={llmAnalyses[1]} />
+          </section>
+        )}
+
+        <WorkerActivityTable workerActivity={workerActivity} />
+
+        <DetailedWorkerReports reports={reports} job={job} />
+
+        <WorkerReportsHistory job={job} reports={reports} llmAnalyses={llmAnalyses} />
       </div>
     </AppShell>
   );

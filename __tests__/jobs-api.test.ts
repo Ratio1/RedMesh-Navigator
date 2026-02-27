@@ -30,7 +30,7 @@ describe('jobs mock service', () => {
         workerCount: 2,
         features: ['service_info_common', 'web_test_security_headers']
       },
-      { owner: 'tester' }
+      {}
     );
 
     expect(created.displayName).toBe('Test Run');

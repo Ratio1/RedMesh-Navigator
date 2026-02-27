@@ -2,6 +2,7 @@
 
 import { useAuth } from '@/components/auth/AuthContext';
 import { Job } from '@/lib/api/types';
+import { getEvent } from '@/lib/api/jobs';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 interface JobsState {
@@ -79,9 +80,14 @@ export default function useJobs(): JobsState {
   const jobList = jobs ?? [];
 
   const split = useMemo(() => {
-    const ongoing = jobList.filter((job) => job.status === 'running' || job.status === 'stopping');
-    const completed = jobList.filter((job) => job.status === 'completed');
-    const stopped = jobList.filter((job) => job.status === 'stopped');
+    const byNewest = (a: Job, b: Job) => {
+      const aDate = getEvent(a.timeline, 'created')?.date ?? '';
+      const bDate = getEvent(b.timeline, 'created')?.date ?? '';
+      return new Date(bDate).getTime() - new Date(aDate).getTime();
+    };
+    const ongoing = jobList.filter((job) => job.status === 'running' || job.status === 'stopping').sort(byNewest);
+    const completed = jobList.filter((job) => job.status === 'completed').sort(byNewest);
+    const stopped = jobList.filter((job) => job.status === 'stopped').sort(byNewest);
     return { ongoing, completed, stopped };
   }, [jobList]);
 

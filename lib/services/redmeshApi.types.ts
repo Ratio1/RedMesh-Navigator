@@ -34,6 +34,16 @@ export interface LaunchTestRequest {
   task_name?: string;
   task_description?: string;
   selected_peers?: string[];
+  // Security hardening options
+  redact_credentials?: boolean;
+  ics_safe_mode?: boolean;
+  rate_limit_enabled?: boolean;
+  scanner_identity?: string;
+  scanner_user_agent?: string;
+  authorized?: boolean;
+  // User identity (forwarded from Navigator UI)
+  created_by_name?: string;
+  created_by_id?: string;
 }
 
 // Worker Assignment
@@ -58,9 +68,7 @@ export interface JobSpecs {
   exceptions: number[];
   launcher: string;
   launcher_alias?: string;
-  date_created: number;
-  date_updated: number;
-  date_finalized?: number | null;
+  timeline?: Array<{ type: string; label: string; date: number; actor: string; actor_type: string; meta?: Record<string, unknown> }>;
   job_status: JobStatusType;
   workers: Record<string, WorkerAssignment>;
   distribution_strategy: DistributionStrategy;
@@ -77,6 +85,15 @@ export interface JobSpecs {
   scan_max_delay: number;
   task_name?: string;
   task_description?: string;
+  duration?: number;
+  risk_score?: number; // 0-100 risk score (latest pass)
+  // Security hardening options
+  redact_credentials?: boolean;
+  ics_safe_mode?: boolean;
+  rate_limit_enabled?: boolean;
+  scanner_identity?: string;
+  scanner_user_agent?: string;
+  authorized?: boolean;
 }
 
 // Launch Test Response
@@ -220,9 +237,22 @@ export interface StopMonitoringRequest {
 // Note: API returns pass_nr and reports mapping (node_address -> CID)
 export interface PassHistoryEntry {
   pass_nr: number;
-  completed_at: number;
+  date_started?: number;
+  date_completed?: number;
+  completed_at?: number; // legacy field name
+  duration?: number;
   reports: Record<string, string>; // node_address -> CID mapping
   llm_analysis_cid?: string; // CID for LLM analysis (present for completed passes)
+  quick_summary_cid?: string; // CID for quick AI summary (2-4 sentences)
+  risk_score?: number; // 0-100 risk score for this pass
+  risk_breakdown?: {
+    findings_score: number;
+    open_ports_score: number;
+    breadth_score: number;
+    credentials_penalty: number;
+    raw_total: number;
+    finding_counts: Record<string, number>;
+  };
 }
 
 // Stop Monitoring Response

@@ -65,11 +65,8 @@ export function useAggregatedPorts(
 
     const sortedPorts = Array.from(portsSet).sort((a, b) => a - b);
 
-    // Count total services
-    let totalServices = 0;
-    serviceMap.forEach((info) => {
-      totalServices += Object.keys(info).length;
-    });
+    // Count total services (one service per port)
+    const totalServices = serviceMap.size;
 
     // Count total findings
     let totalFindings = 0;

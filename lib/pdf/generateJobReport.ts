@@ -1,6 +1,8 @@
 import jsPDF from 'jspdf';
 import { format } from 'date-fns';
 import type { Job, WorkerReport, LlmAnalysis } from '@/lib/api/types';
+import { RUN_MODE, JOB_STATUS } from '@/lib/api/constants';
+import { probeResultToString, normalizeProbeResult } from '@/lib/utils/probeResult';
 import type { AggregatedPortsData, WorkerActivityItem } from '@/app/dashboard/jobs/[jobId]/types';
 
 type RGB = [number, number, number];
@@ -26,12 +28,24 @@ function formatDate(value?: string): string {
   }
 }
 
+function formatDuration(seconds?: number): string {
+  if (seconds == null || seconds < 0) return '--';
+  if (seconds < 60) return `${Math.round(seconds)}s`;
+  const m = Math.floor(seconds / 60);
+  const s = Math.round(seconds % 60);
+  if (m < 60) return s > 0 ? `${m}m ${s}s` : `${m}m`;
+  const h = Math.floor(m / 60);
+  const rm = m % 60;
+  return rm > 0 ? `${h}h ${rm}m` : `${h}h`;
+}
+
 interface GenerateJobReportParams {
   job: Job;
   reports: Record<string, WorkerReport>;
   aggregatedPorts: AggregatedPortsData;
   workerActivity: WorkerActivityItem[];
   llmAnalyses?: Record<number, LlmAnalysis>;
+  quickSummaries?: Record<number, LlmAnalysis>;
 }
 
 /**
@@ -43,6 +57,7 @@ export function generateJobReport({
   aggregatedPorts,
   workerActivity,
   llmAnalyses,
+  quickSummaries,
 }: GenerateJobReportParams): void {
   const doc = new jsPDF();
   let y = 20;
@@ -125,8 +140,234 @@ export function generateJobReport({
     y += 6;
   };
 
+  const truncateAddress = (addr: string) =>
+    addr.length > 20 ? `${addr.slice(0, 8)}...${addr.slice(-8)}` : addr;
+
   /**
-   * Render LLM analysis markdown content to PDF
+   * Render markdown text content to PDF with inline formatting support.
+   * Handles headers, lists, code blocks, bold, italic, and inline code.
+   */
+  const renderMarkdownContent = (content: string, baseIndent: number = 0): void => {
+    const leftMargin = margin + baseIndent;
+    const availableWidth = contentWidth - baseIndent;
+
+    /**
+     * Render a single line with inline markdown formatting (bold, code, normal).
+     * Splits `**bold**` and `` `code` `` into segments rendered with proper fonts.
+     */
+    const renderInlineLine = (rawLine: string, x: number, maxWidth: number, fontSize: number = 8): void => {
+      // Parse into segments: { text, style: 'normal' | 'bold' | 'code' }
+      type Segment = { text: string; style: 'normal' | 'bold' | 'code' };
+      const segments: Segment[] = [];
+      // Match **bold** or `code` or plain text
+      const re = /(\*\*([^*]+)\*\*|`([^`]+)`)/g;
+      let lastIndex = 0;
+      let match: RegExpExecArray | null;
+      while ((match = re.exec(rawLine)) !== null) {
+        if (match.index > lastIndex) {
+          segments.push({ text: rawLine.slice(lastIndex, match.index), style: 'normal' });
+        }
+        if (match[2] !== undefined) {
+          segments.push({ text: match[2], style: 'bold' });
+        } else if (match[3] !== undefined) {
+          segments.push({ text: match[3], style: 'code' });
+        }
+        lastIndex = re.lastIndex;
+      }
+      if (lastIndex < rawLine.length) {
+        segments.push({ text: rawLine.slice(lastIndex), style: 'normal' });
+      }
+      if (segments.length === 0) return;
+
+      // Check if everything fits on one line
+      let totalWidth = 0;
+      for (const seg of segments) {
+        doc.setFont(seg.style === 'code' ? 'Courier' : 'Helvetica', seg.style === 'bold' ? 'bold' : 'normal');
+        doc.setFontSize(seg.style === 'code' ? fontSize - 1 : fontSize);
+        totalWidth += doc.getTextWidth(seg.text);
+      }
+
+      if (totalWidth <= maxWidth) {
+        // Render inline — all segments on one line
+        let cx = x;
+        for (const seg of segments) {
+          doc.setFont(seg.style === 'code' ? 'Courier' : 'Helvetica', seg.style === 'bold' ? 'bold' : 'normal');
+          doc.setFontSize(seg.style === 'code' ? fontSize - 1 : fontSize);
+          doc.setTextColor(...colors.text);
+          doc.text(seg.text, cx, y);
+          cx += doc.getTextWidth(seg.text);
+        }
+        y += fontSize * 0.5;
+      } else {
+        // Fallback: join as plain text (strip markers), wrap normally
+        const plain = rawLine.replace(/\*\*([^*]+)\*\*/g, '$1').replace(/`([^`]+)`/g, '$1');
+        doc.setFont('Helvetica', 'normal');
+        doc.setFontSize(fontSize);
+        doc.setTextColor(...colors.text);
+        const wrapped = doc.splitTextToSize(plain, maxWidth);
+        wrapped.forEach((wl: string) => {
+          checkPageBreak(4);
+          doc.text(wl, x, y);
+          y += 4;
+        });
+      }
+    };
+
+    const lines = content.split('\n');
+    let inCodeBlock = false;
+    let inList = false;
+
+    for (const line of lines) {
+      // Code block handling
+      if (line.startsWith('```')) {
+        inCodeBlock = !inCodeBlock;
+        if (inCodeBlock) {
+          y += 2;
+          doc.setFillColor(30, 41, 59); // slate-800
+        }
+        continue;
+      }
+
+      if (inCodeBlock) {
+        checkPageBreak(5);
+        doc.setFillColor(30, 41, 59);
+        doc.rect(leftMargin, y - 3, availableWidth, 5, 'F');
+        doc.setFont('Courier', 'normal');
+        doc.setFontSize(7);
+        doc.setTextColor(200, 200, 200);
+        const wrapped = doc.splitTextToSize(line, availableWidth - 10);
+        wrapped.forEach((wl: string) => {
+          doc.text(wl, leftMargin + 5, y);
+          y += 4;
+        });
+        continue;
+      }
+
+      // Headers
+      if (line.startsWith('# ')) {
+        checkPageBreak(12);
+        y += 4;
+        doc.setFontSize(14);
+        doc.setFont('Helvetica', 'bold');
+        doc.setTextColor(...colors.text);
+        const text = line.slice(2).replace(/\*\*/g, '');
+        const wrapped = doc.splitTextToSize(text, availableWidth);
+        wrapped.forEach((wl: string) => {
+          doc.text(wl, leftMargin, y);
+          y += 6;
+        });
+        y += 2;
+        continue;
+      }
+      if (line.startsWith('## ')) {
+        checkPageBreak(10);
+        y += 3;
+        doc.setFontSize(11);
+        doc.setFont('Helvetica', 'bold');
+        doc.setTextColor(...colors.primary);
+        const text = line.slice(3).replace(/\*\*/g, '');
+        const wrapped = doc.splitTextToSize(text, availableWidth);
+        wrapped.forEach((wl: string) => {
+          doc.text(wl, leftMargin, y);
+          y += 5;
+        });
+        // Underline
+        doc.setDrawColor(...colors.light);
+        doc.setLineWidth(0.3);
+        doc.line(leftMargin, y, leftMargin + availableWidth, y);
+        y += 4;
+        continue;
+      }
+      if (line.startsWith('### ')) {
+        checkPageBreak(8);
+        y += 2;
+        doc.setFontSize(10);
+        doc.setFont('Helvetica', 'bold');
+        doc.setTextColor(...colors.secondary);
+        const text = line.slice(4).replace(/\*\*/g, '');
+        const wrapped = doc.splitTextToSize(text, availableWidth);
+        wrapped.forEach((wl: string) => {
+          doc.text(wl, leftMargin, y);
+          y += 4.5;
+        });
+        y += 1;
+        continue;
+      }
+      if (line.startsWith('#### ')) {
+        checkPageBreak(7);
+        y += 1;
+        doc.setFontSize(9);
+        doc.setFont('Helvetica', 'bold');
+        doc.setTextColor(...colors.text);
+        const text = line.slice(5).replace(/\*\*/g, '');
+        const wrapped = doc.splitTextToSize(text, availableWidth);
+        wrapped.forEach((wl: string) => {
+          doc.text(wl, leftMargin, y);
+          y += 4;
+        });
+        continue;
+      }
+
+      // List items
+      if (line.match(/^[-*]\s/)) {
+        checkPageBreak(5);
+        inList = true;
+        doc.setFontSize(8);
+        doc.setFont('Helvetica', 'normal');
+        doc.setTextColor(...colors.text);
+
+        // Check for bold text in list item
+        let text = line.slice(2);
+        const boldMatch = text.match(/^\*\*([^*]+)\*\*:?\s*(.*)/);
+        if (boldMatch) {
+          doc.setFont('Helvetica', 'bold');
+          doc.text('• ' + boldMatch[1] + ':', leftMargin + 5, y);
+          const labelWidth = doc.getTextWidth('• ' + boldMatch[1] + ': ');
+          doc.setFont('Helvetica', 'normal');
+          if (boldMatch[2]) {
+            const wrapped = doc.splitTextToSize(boldMatch[2], availableWidth - 10 - labelWidth);
+            wrapped.forEach((wl: string, idx: number) => {
+              if (idx === 0) {
+                doc.text(wl, leftMargin + 5 + labelWidth, y);
+              } else {
+                y += 4;
+                checkPageBreak(4);
+                doc.text(wl, leftMargin + 10, y);
+              }
+            });
+          }
+        } else {
+          text = text.replace(/\*\*([^*]+)\*\*/g, '$1');
+          const wrapped = doc.splitTextToSize('• ' + text, availableWidth - 5);
+          wrapped.forEach((wl: string, idx: number) => {
+            if (idx > 0) {
+              checkPageBreak(4);
+            }
+            doc.text(wl, leftMargin + 5, y);
+            y += 4;
+          });
+          y -= 4; // Adjust for loop increment
+        }
+        y += 4;
+        continue;
+      }
+
+      // Empty line
+      if (line.trim() === '') {
+        inList = false;
+        y += 3;
+        continue;
+      }
+
+      // Regular paragraph — render with inline bold/code formatting
+      checkPageBreak(5);
+      renderInlineLine(line, leftMargin, availableWidth);
+      y += 1;
+    }
+  };
+
+  /**
+   * Render LLM analysis section: chrome header + markdown content
    */
   const renderLlmAnalysis = (analysis: LlmAnalysis, passNr?: number): void => {
     // Section header with AI icon indicator
@@ -176,184 +417,17 @@ export function generateJobReport({
     doc.text(metaInfo.join('  |  '), margin + 5, y + 4);
     y += 15;
 
-    // Render markdown content
-    const lines = analysis.content.split('\n');
-    let inCodeBlock = false;
-    let inList = false;
-
-    for (const line of lines) {
-      // Code block handling
-      if (line.startsWith('```')) {
-        inCodeBlock = !inCodeBlock;
-        if (inCodeBlock) {
-          y += 2;
-          doc.setFillColor(30, 41, 59); // slate-800
-        }
-        continue;
-      }
-
-      if (inCodeBlock) {
-        checkPageBreak(5);
-        doc.setFillColor(30, 41, 59);
-        doc.rect(margin, y - 3, contentWidth, 5, 'F');
-        doc.setFont('Courier', 'normal');
-        doc.setFontSize(7);
-        doc.setTextColor(200, 200, 200);
-        const wrapped = doc.splitTextToSize(line, contentWidth - 10);
-        wrapped.forEach((wl: string) => {
-          doc.text(wl, margin + 5, y);
-          y += 4;
-        });
-        continue;
-      }
-
-      // Headers
-      if (line.startsWith('# ')) {
-        checkPageBreak(12);
-        y += 4;
-        doc.setFontSize(14);
-        doc.setFont('Helvetica', 'bold');
-        doc.setTextColor(...colors.text);
-        const text = line.slice(2).replace(/\*\*/g, '');
-        const wrapped = doc.splitTextToSize(text, contentWidth);
-        wrapped.forEach((wl: string) => {
-          doc.text(wl, margin, y);
-          y += 6;
-        });
-        y += 2;
-        continue;
-      }
-      if (line.startsWith('## ')) {
-        checkPageBreak(10);
-        y += 3;
-        doc.setFontSize(11);
-        doc.setFont('Helvetica', 'bold');
-        doc.setTextColor(...colors.primary);
-        const text = line.slice(3).replace(/\*\*/g, '');
-        const wrapped = doc.splitTextToSize(text, contentWidth);
-        wrapped.forEach((wl: string) => {
-          doc.text(wl, margin, y);
-          y += 5;
-        });
-        // Underline
-        doc.setDrawColor(...colors.light);
-        doc.setLineWidth(0.3);
-        doc.line(margin, y, pageWidth - margin, y);
-        y += 4;
-        continue;
-      }
-      if (line.startsWith('### ')) {
-        checkPageBreak(8);
-        y += 2;
-        doc.setFontSize(10);
-        doc.setFont('Helvetica', 'bold');
-        doc.setTextColor(...colors.secondary);
-        const text = line.slice(4).replace(/\*\*/g, '');
-        const wrapped = doc.splitTextToSize(text, contentWidth);
-        wrapped.forEach((wl: string) => {
-          doc.text(wl, margin, y);
-          y += 4.5;
-        });
-        y += 1;
-        continue;
-      }
-      if (line.startsWith('#### ')) {
-        checkPageBreak(7);
-        y += 1;
-        doc.setFontSize(9);
-        doc.setFont('Helvetica', 'bold');
-        doc.setTextColor(...colors.text);
-        const text = line.slice(5).replace(/\*\*/g, '');
-        const wrapped = doc.splitTextToSize(text, contentWidth);
-        wrapped.forEach((wl: string) => {
-          doc.text(wl, margin, y);
-          y += 4;
-        });
-        continue;
-      }
-
-      // List items
-      if (line.match(/^[-*]\s/)) {
-        checkPageBreak(5);
-        inList = true;
-        doc.setFontSize(8);
-        doc.setFont('Helvetica', 'normal');
-        doc.setTextColor(...colors.text);
-
-        // Check for bold text in list item
-        let text = line.slice(2);
-        const boldMatch = text.match(/^\*\*([^*]+)\*\*:?\s*(.*)/);
-        if (boldMatch) {
-          doc.setFont('Helvetica', 'bold');
-          doc.text('• ' + boldMatch[1] + ':', margin + 5, y);
-          const labelWidth = doc.getTextWidth('• ' + boldMatch[1] + ': ');
-          doc.setFont('Helvetica', 'normal');
-          if (boldMatch[2]) {
-            const wrapped = doc.splitTextToSize(boldMatch[2], contentWidth - 10 - labelWidth);
-            wrapped.forEach((wl: string, idx: number) => {
-              if (idx === 0) {
-                doc.text(wl, margin + 5 + labelWidth, y);
-              } else {
-                y += 4;
-                checkPageBreak(4);
-                doc.text(wl, margin + 10, y);
-              }
-            });
-          }
-        } else {
-          text = text.replace(/\*\*([^*]+)\*\*/g, '$1');
-          const wrapped = doc.splitTextToSize('• ' + text, contentWidth - 5);
-          wrapped.forEach((wl: string, idx: number) => {
-            if (idx > 0) {
-              checkPageBreak(4);
-            }
-            doc.text(wl, margin + 5, y);
-            y += 4;
-          });
-          y -= 4; // Adjust for loop increment
-        }
-        y += 4;
-        continue;
-      }
-
-      // Empty line
-      if (line.trim() === '') {
-        inList = false;
-        y += 3;
-        continue;
-      }
-
-      // Regular paragraph
-      checkPageBreak(5);
-      doc.setFontSize(8);
-      doc.setFont('Helvetica', 'normal');
-      doc.setTextColor(...colors.text);
-
-      // Handle inline formatting
-      let text = line
-        .replace(/\*\*([^*]+)\*\*/g, '$1') // Remove bold markers (can't do real bold inline easily)
-        .replace(/\*([^*]+)\*/g, '$1')     // Remove italic markers
-        .replace(/`([^`]+)`/g, '$1');       // Remove code markers
-
-      const wrapped = doc.splitTextToSize(text, contentWidth);
-      wrapped.forEach((wl: string) => {
-        checkPageBreak(4);
-        doc.text(wl, margin, y);
-        y += 4;
-      });
-      y += 1;
-    }
+    renderMarkdownContent(analysis.content);
 
     y += 5;
     addDivider();
   };
 
-  // === COVER PAGE ===
-  // Header bar
+  // === 1. COVER PAGE + REPORT CONTEXT ===
+  // Red banner
   doc.setFillColor(...colors.primary);
   doc.rect(0, 0, pageWidth, 45, 'F');
 
-  // Title
   doc.setTextColor(255, 255, 255);
   doc.setFontSize(24);
   doc.setFont('Helvetica', 'bold');
@@ -367,7 +441,7 @@ export function generateJobReport({
 
   // Task Overview Box
   doc.setFillColor(...colors.light);
-  doc.roundedRect(margin, y, contentWidth, 45, 3, 3, 'F');
+  doc.roundedRect(margin, y, contentWidth, 30, 3, 3, 'F');
   y += 8;
 
   doc.setTextColor(...colors.text);
@@ -382,57 +456,203 @@ export function generateJobReport({
   doc.text(`Target: ${job.target}`, margin + 5, y);
   y += 5;
   doc.text(`Job ID: ${job.id}`, margin + 5, y);
+
+  y += 15;
+
+  // Who requested — find the user who initiated the job from timeline
+  const userEvent = job.timeline.find(e => e.actorType === 'user');
+  const requestedBy = userEvent?.actor ?? job.initiatorAlias ?? job.initiator;
+  addLabelValue('Requested By', requestedBy);
+  if (job.initiatorAddress) {
+    addLabelValue('Launcher Node', job.initiatorAddress);
+  }
+
+  // What task
+  if (job.summary && job.summary !== 'RedMesh scan job') {
+    addLabelValue('Description', job.summary);
+  }
+
+  // When reported
+  addLabelValue('Report Produced', formatDate(new Date().toISOString()));
+
+  // Duration
+  if (job.totalDuration != null) {
+    addLabelValue('Duration', formatDuration(job.totalDuration));
+  }
   y += 5;
 
-  // Status label and badge
-  doc.setFontSize(7);
-  doc.setFont('Helvetica', 'normal');
-  doc.setTextColor(...colors.muted);
-  doc.text('Status:', margin + 5, y);
-  y += 4;
+  // When executed — Visual Timeline
+  if (job.timeline.length > 0) {
+    const dotColors: Record<string, RGB> = {
+      created: [148, 163, 184],   // slate-400
+      started: [52, 211, 153],    // emerald-400
+      pass_started: [52, 211, 153],
+      completed: [34, 197, 94],   // emerald-500
+      pass_completed: [34, 197, 94],
+      finalized: [96, 165, 250],  // blue-400
+      stopped: [251, 113, 133],   // rose-400
+      scheduled_for_stop: [251, 191, 36], // amber-400
+      blockchain_submit: [192, 132, 252], // purple-400
+      llm_analysis: [34, 211, 238],       // cyan-400
+    };
+    const actorTypeBadge: Record<string, { label: string; color: RGB }> = {
+      user: { label: 'USR', color: [52, 211, 153] },    // emerald-400
+      node: { label: 'NOD', color: [251, 191, 36] },    // amber-400
+      system: { label: 'SYS', color: [148, 163, 184] }, // slate-400
+    };
 
-  const statusColor = job.status === 'completed' ? colors.primary :
-                      job.status === 'stopped' ? colors.primary :
-                      job.status === 'stopping' ? colors.warning :
-                      job.status === 'running' ? colors.warning : colors.secondary;
-  doc.setFillColor(...statusColor);
-  doc.roundedRect(margin + 5, y, 50, 8, 2, 2, 'F');
-  doc.setTextColor(255, 255, 255);
-  doc.setFontSize(8);
+    y += 2;
+    job.timeline.forEach((entry, idx) => {
+      const hasMeta = entry.meta && Object.keys(entry.meta).length > 0;
+      const entryHeight = hasMeta ? 20 : 16;
+      checkPageBreak(entryHeight + 2);
+
+      // Colored dot
+      const dot = dotColors[entry.type] ?? colors.primary;
+      doc.setFillColor(...dot);
+      doc.circle(margin + 3, y, 2.5, 'F');
+
+      // Connector line
+      if (idx < job.timeline.length - 1) {
+        doc.setDrawColor(...colors.light);
+        doc.setLineWidth(0.8);
+        doc.line(margin + 3, y + 3, margin + 3, y + entryHeight);
+      }
+
+      // Event label
+      doc.setFontSize(9);
+      doc.setFont('Helvetica', 'bold');
+      doc.setTextColor(...colors.text);
+      doc.text(entry.label, margin + 10, y + 1);
+
+      // Actor type badge (USR / NOD / SYS)
+      const badge = actorTypeBadge[entry.actorType] ?? actorTypeBadge.system;
+      const badgeX = margin + 10 + doc.getTextWidth(entry.label) + 3;
+      doc.setFontSize(6);
+      doc.setFont('Helvetica', 'bold');
+      const badgeWidth = doc.getTextWidth(badge.label) + 4;
+      doc.setDrawColor(...badge.color);
+      doc.setLineWidth(0.4);
+      doc.roundedRect(badgeX, y - 3.5, badgeWidth, 6, 1, 1, 'S');
+      doc.setTextColor(...badge.color);
+      doc.text(badge.label, badgeX + 2, y + 1);
+
+      // Date + actor
+      doc.setFontSize(7);
+      doc.setFont('Helvetica', 'normal');
+      doc.setTextColor(...colors.muted);
+      const hasActor = entry.actor && entry.actor !== 'system' && entry.actor !== 'unknown';
+      const dateLine = hasActor
+        ? `${formatDate(entry.date)}  ·  ${truncateAddress(entry.actor)}`
+        : formatDate(entry.date);
+      doc.text(dateLine, margin + 10, y + 5.5);
+
+      // Meta entries
+      if (hasMeta) {
+        let metaX = margin + 10;
+        const metaY = y + 10;
+        doc.setFontSize(6);
+        Object.entries(entry.meta!).forEach(([key, value]) => {
+          const metaText = `${key}: ${typeof value === 'object' ? JSON.stringify(value) : String(value)}`;
+          const metaWidth = doc.getTextWidth(metaText) + 4;
+          if (metaX + metaWidth > pageWidth - margin) return; // skip if overflow
+          doc.setFillColor(241, 245, 249); // slate-100
+          doc.roundedRect(metaX, metaY - 3, metaWidth, 5, 1, 1, 'F');
+          doc.setTextColor(...colors.muted);
+          doc.text(metaText, metaX + 2, metaY);
+          metaX += metaWidth + 2;
+        });
+      }
+
+      y += entryHeight;
+    });
+  }
+
+  // Scan Scope
+  const reportsList = Object.values(reports);
+  const totalPortsScanned = reportsList.reduce((sum, r) => sum + r.portsScanned, 0);
+  const serviceTests = (job.featureSet ?? []).filter(f => f.includes('service_info')).length;
+  const webTests = (job.featureSet ?? []).filter(f => f.includes('web_test')).length;
+
+  checkPageBreak(45);
+
+  // Section label
+  doc.setFontSize(9);
   doc.setFont('Helvetica', 'bold');
-  doc.text(job.status.toUpperCase(), margin + 10, y + 5.5);
+  doc.setTextColor(...colors.secondary);
+  doc.text('SCAN SCOPE', margin, y);
+  y += 5;
 
-  // Priority label and badge
+  // Card background
+  const scopeCardY = y;
+  const scopeCardHeight = 38;
+  doc.setFillColor(...colors.light);
+  doc.roundedRect(margin, scopeCardY, contentWidth, scopeCardHeight, 2, 2, 'F');
+
+  // Top row: 3 stat cells — Port Range, Ports Scanned, Workers
+  const scopeStats = [
+    { label: 'Port Range', value: `${job.portRange?.start ?? 1} – ${job.portRange?.end ?? 65535}` },
+    { label: 'Ports Scanned', value: String(totalPortsScanned) },
+    { label: 'Workers', value: String(workerActivity.length || job.workerCount) },
+  ];
+
+  const scopeStatWidth = contentWidth / scopeStats.length;
+  y = scopeCardY + 6;
+  scopeStats.forEach((stat, i) => {
+    const x = margin + i * scopeStatWidth + scopeStatWidth / 2;
+    doc.setFontSize(13);
+    doc.setFont('Helvetica', 'bold');
+    doc.setTextColor(...colors.secondary);
+    doc.text(stat.value, x, y + 4, { align: 'center' });
+    doc.setFontSize(7);
+    doc.setFont('Helvetica', 'normal');
+    doc.setTextColor(...colors.muted);
+    doc.text(stat.label, x, y + 10, { align: 'center' });
+  });
+
+  // Separator line inside card
+  y = scopeCardY + 22;
+  doc.setDrawColor(220, 225, 232); // slate-200
+  doc.setLineWidth(0.3);
+  doc.line(margin + 5, y, margin + contentWidth - 5, y);
+
+  // Bottom row: Run Mode + Tests Enabled (compact inline)
+  y += 6;
+  const runModeLabel = job.runMode === RUN_MODE.CONTINUOUS ? 'Continuous Monitoring' : 'Single Pass';
   doc.setFontSize(7);
-  doc.setFont('Helvetica', 'normal');
-  doc.setTextColor(...colors.muted);
-  doc.text('Priority:', margin + 60, y - 4);
-
-  doc.setFillColor(...colors.secondary);
-  doc.roundedRect(margin + 60, y, 40, 8, 2, 2, 'F');
-  doc.setTextColor(255, 255, 255);
-  doc.setFontSize(8);
   doc.setFont('Helvetica', 'bold');
-  doc.text(job.priority.toUpperCase(), margin + 65, y + 5.5);
+  doc.setTextColor(...colors.muted);
+  doc.text('Mode:', margin + 8, y);
+  doc.setFont('Helvetica', 'normal');
+  doc.setTextColor(...colors.text);
+  doc.text(runModeLabel, margin + 8 + doc.getTextWidth('Mode: '), y);
 
-  y += 20;
+  if (serviceTests > 0 || webTests > 0) {
+    const testsX = margin + contentWidth / 2;
+    const parts: string[] = [];
+    if (serviceTests > 0) parts.push(`${serviceTests} service detection`);
+    if (webTests > 0) parts.push(`${webTests} web security`);
+    doc.setFont('Helvetica', 'bold');
+    doc.setTextColor(...colors.muted);
+    doc.text('Tests:', testsX, y);
+    doc.setFont('Helvetica', 'normal');
+    doc.setTextColor(...colors.text);
+    doc.text(parts.join(', '), testsX + doc.getTextWidth('Tests: '), y);
+  }
 
-  // Summary Stats - use reports data for accurate counts
-  addHeader('Summary Statistics', 11);
+  y = scopeCardY + scopeCardHeight + 6;
+
+  // === 3. AGGREGATE FINDINGS ===
+  addHeader('Aggregate Findings', 11);
   y += 2;
 
-  const reportsList = Object.values(reports);
   const totalOpenPorts = aggregatedPorts.ports.length;
-  const totalPortsScanned = reportsList.reduce((sum, r) => sum + r.portsScanned, 0);
-  const workersWithDetails = job.workers.filter(w => Object.keys(w.serviceInfo).length > 0 || Object.keys(w.webTestsInfo).length > 0);
-  const workersWithFindings = reportsList.filter(r => r.openPorts.length > 0 || Object.keys(r.serviceInfo).length > 0).length;
+  const reportsWithDetails = Object.entries(reports).filter(([, r]) => Object.keys(r.serviceInfo).length > 0 || Object.keys(r.webTestsInfo).length > 0);
 
   const stats = [
-    { label: 'Workers', value: String(workerActivity.length || job.workerCount) },
-    { label: 'Port Range', value: `${job.portRange?.start ?? 1} - ${job.portRange?.end ?? 65535}` },
-    { label: 'Ports Scanned', value: String(totalPortsScanned) },
-    { label: 'Open Ports Found', value: String(totalOpenPorts) },
-    { label: 'Workers with Findings', value: String(workersWithFindings) },
+    { label: 'Open Ports', value: String(totalOpenPorts) },
+    { label: 'Identified Services', value: String(aggregatedPorts.totalServices) },
+    { label: 'Findings', value: String(aggregatedPorts.totalFindings) },
   ];
 
   doc.setFillColor(...colors.light);
@@ -453,187 +673,151 @@ export function generateJobReport({
   });
 
   y += 25;
-  addDivider();
 
-  // Task Description
-  if (job.summary && job.summary !== 'RedMesh scan job') {
-    addHeader('Task Description', 11);
-    const descWrapped = doc.splitTextToSize(job.summary, contentWidth);
+  // === 3a. RISK SCORE BANNER ===
+  if (job.riskScore != null) {
+    checkPageBreak(22);
+
+    const riskScore = job.riskScore;
+    let riskLabel: string;
+    let riskColor: RGB;
+    let riskBgColor: RGB;
+
+    if (riskScore <= 20) {
+      riskLabel = 'Low Risk';
+      riskColor = [16, 185, 129];    // emerald-500
+      riskBgColor = [236, 253, 245]; // emerald-50
+    } else if (riskScore <= 40) {
+      riskLabel = 'Moderate Risk';
+      riskColor = [234, 179, 8];     // yellow-500
+      riskBgColor = [254, 252, 232]; // yellow-50
+    } else if (riskScore <= 60) {
+      riskLabel = 'Elevated Risk';
+      riskColor = [245, 158, 11];    // amber-500
+      riskBgColor = [255, 251, 235]; // amber-50
+    } else if (riskScore <= 80) {
+      riskLabel = 'High Risk';
+      riskColor = [239, 68, 68];     // red-500
+      riskBgColor = [254, 242, 242]; // red-50
+    } else {
+      riskLabel = 'Critical Risk';
+      riskColor = [185, 28, 28];     // red-700
+      riskBgColor = [254, 226, 226]; // red-100
+    }
+
+    // Banner background
+    doc.setFillColor(...riskBgColor);
+    doc.roundedRect(margin, y, contentWidth, 18, 2, 2, 'F');
+
+    // Left accent bar
+    doc.setFillColor(...riskColor);
+    doc.rect(margin, y, 4, 18, 'F');
+
+    // Score number
+    doc.setFontSize(18);
+    doc.setFont('Helvetica', 'bold');
+    doc.setTextColor(...riskColor);
+    doc.text(String(riskScore), margin + 10, y + 12);
+
+    // "/100" suffix
+    const scoreWidth = doc.getTextWidth(String(riskScore));
     doc.setFontSize(9);
     doc.setFont('Helvetica', 'normal');
-    doc.setTextColor(...colors.text);
-    descWrapped.forEach((line: string) => {
-      checkPageBreak(4);
-      doc.text(line, margin, y);
-      y += 4.5;
-    });
-    y += 3;
-  }
+    doc.setTextColor(...colors.muted);
+    doc.text('/100', margin + 10 + scoreWidth + 1, y + 12);
 
-  // AI Security Analysis for singlepass jobs (show at top level)
-  if (job.runMode === 'singlepass' && llmAnalyses && llmAnalyses[1]) {
-    doc.addPage();
-    y = 20;
-    renderLlmAnalysis(llmAnalyses[1]);
-  }
+    // Risk label
+    doc.setFontSize(11);
+    doc.setFont('Helvetica', 'bold');
+    doc.setTextColor(...riskColor);
+    doc.text(riskLabel, margin + 10 + scoreWidth + doc.getTextWidth('/100') + 8, y + 12);
 
-  // Configuration Section
-  addHeader('Scan Configuration', 11);
-  addLabelValue('Run Mode', job.runMode === 'continuous' ? 'Continuous Monitoring' : 'Single Pass');
-  addLabelValue('Distribution', (job.distribution ?? 'slice').toUpperCase());
-  addLabelValue('Port Order', (job.portOrder ?? 'sequential').toUpperCase());
-  addLabelValue('Port Range', `${job.portRange?.start ?? 1} - ${job.portRange?.end ?? 65535}`);
-  if (job.tempo) {
-    addLabelValue('Scan Delay', `${job.tempo.minSeconds}s - ${job.tempo.maxSeconds}s`);
-  }
-  addLabelValue('Current Pass', String(job.currentPass));
-  if (job.monitorInterval) {
-    addLabelValue('Monitor Interval', `${job.monitorInterval}s`);
-  }
-  if (job.monitoringStatus) {
-    addLabelValue('Monitoring Status', job.monitoringStatus);
-  }
-  if (job.nextPassAt) {
-    addLabelValue('Next Pass At', formatDate(job.nextPassAt));
-  }
-  y += 5;
-
-  // Timing Section
-  addHeader('Timing', 11);
-  addLabelValue('Created', formatDate(job.createdAt));
-  addLabelValue('Updated', formatDate(job.updatedAt));
-  addLabelValue('Started', formatDate(job.startedAt));
-  addLabelValue('Completed', formatDate(job.completedAt));
-  if (job.finalizedAt) {
-    addLabelValue('Finalized', formatDate(job.finalizedAt));
-  }
-  y += 5;
-
-  // Ownership & Launcher Info
-  addHeader('Launcher Information', 11);
-  if (job.initiatorAlias) {
-    addLabelValue('Launcher Alias', job.initiatorAlias);
-  }
-  if (job.initiatorAddress) {
-    addLabelValue('Launcher Address', job.initiatorAddress);
-  } else {
-    addLabelValue('Initiator', job.initiator);
-  }
-  if (job.owner && job.owner !== job.initiatorAddress) {
-    addLabelValue('Owner', job.owner);
-  }
-  y += 5;
-
-  // Enabled Features (full list)
-  if (job.featureSet && job.featureSet.length > 0) {
-    addHeader(`Enabled Features (${job.featureSet.length})`, 11);
-    const serviceFeatures = job.featureSet.filter(f => f.includes('service_info'));
-    const webFeatures = job.featureSet.filter(f => f.includes('web_test'));
-    const otherFeatures = job.featureSet.filter(f => !f.includes('service_info') && !f.includes('web_test'));
-
-    if (serviceFeatures.length > 0) {
-      doc.setFontSize(8);
-      doc.setFont('Helvetica', 'bold');
-      doc.setTextColor(...colors.secondary);
-      checkPageBreak(5);
-      doc.text(`Service Detection (${serviceFeatures.length}):`, margin, y);
-      y += 4;
-      doc.setFont('Helvetica', 'normal');
-      doc.setTextColor(...colors.text);
-      const serviceText = serviceFeatures.map(f => f.replace(/^_service_info_/, '')).join(', ');
-      const serviceWrapped = doc.splitTextToSize(serviceText, contentWidth - 5);
-      serviceWrapped.forEach((line: string) => {
-        checkPageBreak(4);
-        doc.text(line, margin + 5, y);
-        y += 4;
-      });
-      y += 2;
-    }
-
-    if (webFeatures.length > 0) {
-      doc.setFontSize(8);
-      doc.setFont('Helvetica', 'bold');
-      doc.setTextColor(...colors.secondary);
-      checkPageBreak(5);
-      doc.text(`Web Security Tests (${webFeatures.length}):`, margin, y);
-      y += 4;
-      doc.setFont('Helvetica', 'normal');
-      doc.setTextColor(...colors.text);
-      const webText = webFeatures.map(f => f.replace(/^_web_test_/, '')).join(', ');
-      const webWrapped = doc.splitTextToSize(webText, contentWidth - 5);
-      webWrapped.forEach((line: string) => {
-        checkPageBreak(4);
-        doc.text(line, margin + 5, y);
-        y += 4;
-      });
-      y += 2;
-    }
-
-    if (otherFeatures.length > 0) {
-      doc.setFontSize(8);
-      doc.setFont('Helvetica', 'bold');
-      doc.setTextColor(...colors.secondary);
-      checkPageBreak(5);
-      doc.text(`Other Features (${otherFeatures.length}):`, margin, y);
-      y += 4;
-      doc.setFont('Helvetica', 'normal');
-      doc.setTextColor(...colors.text);
-      const otherText = otherFeatures.map(f => f.replace(/^_/, '')).join(', ');
-      const otherWrapped = doc.splitTextToSize(otherText, contentWidth - 5);
-      otherWrapped.forEach((line: string) => {
-        checkPageBreak(4);
-        doc.text(line, margin + 5, y);
-        y += 4;
-      });
-    }
-    y += 3;
-  }
-
-  // Excluded Features
-  if (job.excludedFeatures && job.excludedFeatures.length > 0) {
-    addHeader(`Excluded Features (${job.excludedFeatures.length})`, 11, colors.muted);
-    const excludedText = job.excludedFeatures.map(f => f.replace(/^_/, '').replace(/_/g, ' ')).join(', ');
-    const excludedWrapped = doc.splitTextToSize(excludedText, contentWidth);
-    doc.setFontSize(8);
+    // "Risk Score" descriptor
+    doc.setFontSize(7);
     doc.setFont('Helvetica', 'normal');
     doc.setTextColor(...colors.muted);
-    excludedWrapped.forEach((line: string) => {
-      checkPageBreak(4);
-      doc.text(line, margin, y);
-      y += 4;
-    });
-    y += 3;
+    doc.text('Risk Score', margin + 10, y + 16);
+
+    y += 22;
   }
 
-  // Exception Ports
-  if (job.exceptionPorts && job.exceptionPorts.length > 0) {
-    addHeader('Exception Ports', 11);
-    addText(job.exceptionPorts.join(', '));
-    y += 3;
-  }
+  // === 3b. QUICK AI SUMMARY (after stats, before full analysis) ===
+  if (quickSummaries) {
+    let bestQuickSummary: LlmAnalysis | undefined;
 
-  // Worker Assignments
-  if (job.workers.length > 0) {
-    addHeader(`Worker Assignments (${job.workers.length})`, 11);
-    job.workers.forEach((worker) => {
-      checkPageBreak(8);
-      doc.setFontSize(8);
+    if (job.runMode === RUN_MODE.SINGLEPASS) {
+      bestQuickSummary = quickSummaries[1];
+    } else {
+      const passNumbers = Object.keys(quickSummaries).map(Number).sort((a, b) => b - a);
+      if (passNumbers.length > 0) {
+        bestQuickSummary = quickSummaries[passNumbers[0]];
+      }
+    }
+
+    if (bestQuickSummary?.content) {
+      checkPageBreak(20);
+
+      // Header bar
+      doc.setFillColor(...colors.primary);
+      doc.roundedRect(margin, y, contentWidth, 10, 2, 2, 'F');
+      doc.setTextColor(255, 255, 255);
+      doc.setFontSize(9);
       doc.setFont('Helvetica', 'bold');
-      doc.setTextColor(...colors.secondary);
-      const displayId = worker.id.length > 50 ? worker.id.slice(0, 25) + '...' + worker.id.slice(-20) : worker.id;
-      doc.text(displayId, margin, y);
-      y += 4;
-      doc.setFont('Helvetica', 'normal');
-      doc.setTextColor(...colors.text);
-      const workerStatus = worker.done ? 'Done' : worker.canceled ? 'Canceled' : 'In Progress';
-      doc.text(`Ports ${worker.startPort}-${worker.endPort} | Status: ${workerStatus}`, margin + 5, y);
-      y += 5;
-    });
-    y += 3;
+      doc.text('AI Summary', margin + 5, y + 7);
+      y += 14;
+
+      // Content with left accent bar
+      const accentX = margin;
+      const contentStartY = y;
+      renderMarkdownContent(bestQuickSummary.content, 5);
+      // Draw red accent line along the left edge of the content
+      doc.setDrawColor(...colors.primary);
+      doc.setLineWidth(1.5);
+      doc.line(accentX, contentStartY - 2, accentX, y);
+      y += 3;
+    }
   }
 
-  // === PAGE 2: FINDINGS ===
-  const hasFindings = totalOpenPorts > 0 || job.aggregate || workersWithDetails.length > 0;
+  addDivider();
+
+  // === 4. AI SECURITY ANALYSIS (promoted — singlepass: pass 1, continuous: latest pass) ===
+  if (llmAnalyses) {
+    let bestAnalysis: LlmAnalysis | undefined;
+    let bestPassNr: number | undefined;
+
+    if (job.runMode === RUN_MODE.SINGLEPASS) {
+      if (llmAnalyses[1]) {
+        bestAnalysis = llmAnalyses[1];
+        bestPassNr = 1;
+      }
+    } else {
+      // Continuous: pick the latest (highest) pass number
+      const passNumbers = Object.keys(llmAnalyses).map(Number).sort((a, b) => b - a);
+      if (passNumbers.length > 0) {
+        bestPassNr = passNumbers[0];
+        bestAnalysis = llmAnalyses[bestPassNr];
+      }
+    }
+
+    if (bestAnalysis) {
+      doc.addPage();
+      y = 20;
+      renderLlmAnalysis(bestAnalysis, bestPassNr);
+    }
+  }
+
+  // Build CID → nodeAddress lookup from passHistory
+  const cidToNodeAddress = new Map<string, string>();
+  if (job.passHistory) {
+    for (const pass of job.passHistory) {
+      for (const [nodeAddr, cid] of Object.entries(pass.reports)) {
+        cidToNodeAddress.set(cid, nodeAddr);
+      }
+    }
+  }
+
+  // === 5. DETAILED FINDINGS (new page) ===
+  const hasFindings = totalOpenPorts > 0 || job.aggregate || reportsWithDetails.length > 0;
   if (hasFindings) {
     doc.addPage();
     y = 20;
@@ -644,10 +828,7 @@ export function generateJobReport({
     addHeader('Discovered Open Ports', 14, colors.primary);
     y += 2;
 
-    const allPorts = new Set<number>();
-    job.workers.forEach(w => w.openPorts.forEach(p => allPorts.add(p)));
-    aggregatedPorts.ports.forEach(p => allPorts.add(p));
-    const sortedPorts = Array.from(allPorts).sort((a, b) => a - b);
+    const sortedPorts = [...aggregatedPorts.ports].sort((a, b) => a - b);
 
     doc.setFillColor(254, 226, 226);
     doc.roundedRect(margin, y, contentWidth, 15, 2, 2, 'F');
@@ -690,13 +871,15 @@ export function generateJobReport({
     addDivider();
   }
 
-  // === DETAILED WORKER REPORTS ===
-  if (workersWithDetails.length > 0) {
+  // Detailed Worker Reports
+  if (reportsWithDetails.length > 0) {
     addHeader('Detailed Worker Reports', 14, colors.primary);
     y += 5;
 
-    workersWithDetails.forEach((worker, idx) => {
+    reportsWithDetails.forEach(([cid, report], idx) => {
       checkPageBreak(50);
+
+      const nodeAddress = cidToNodeAddress.get(cid) ?? cid;
 
       // Worker header
       doc.setFillColor(...colors.light);
@@ -706,27 +889,27 @@ export function generateJobReport({
       doc.setFontSize(11);
       doc.setFont('Helvetica', 'bold');
       doc.setTextColor(...colors.text);
-      doc.text(`Worker: ${worker.id}`, margin + 5, y);
+      doc.text(`Node: ${truncateAddress(nodeAddress)}`, margin + 5, y);
 
       // Status badge
-      const workerStatusColor = worker.done ? colors.primary : worker.canceled ? colors.danger : colors.warning;
+      const workerStatusColor = report.done ? colors.primary : report.canceled ? colors.danger : colors.warning;
       doc.setFillColor(...workerStatusColor);
       doc.roundedRect(pageWidth - margin - 35, y - 4, 30, 7, 2, 2, 'F');
       doc.setTextColor(255, 255, 255);
       doc.setFontSize(7);
-      doc.text(worker.done ? 'DONE' : worker.canceled ? 'CANCELED' : 'RUNNING', pageWidth - margin - 32, y);
+      doc.text(report.done ? 'DONE' : report.canceled ? 'CANCELED' : 'RUNNING', pageWidth - margin - 32, y);
 
       y += 6;
       doc.setFontSize(8);
       doc.setTextColor(...colors.muted);
-      doc.text(`Ports ${worker.startPort}-${worker.endPort} | ${worker.portsScanned} scanned | ${worker.openPorts.length} open`, margin + 5, y);
+      doc.text(`Ports ${report.startPort}-${report.endPort} | ${report.portsScanned} scanned | ${report.openPorts.length} open`, margin + 5, y);
       y += 10;
 
       // Service Info
-      if (Object.keys(worker.serviceInfo).length > 0) {
+      if (Object.keys(report.serviceInfo).length > 0) {
         addHeader('Service Detection Results', 10, colors.primary);
 
-        Object.entries(worker.serviceInfo).forEach(([port, probes]) => {
+        Object.entries(report.serviceInfo).forEach(([port, probes]) => {
           checkPageBreak(20);
 
           doc.setFontSize(9);
@@ -739,9 +922,10 @@ export function generateJobReport({
             if (result === null || result === undefined) return;
 
             checkPageBreak(8);
-            const resultStr = String(result);
-            const isVulnerability = resultStr.includes('VULNERABILITY');
-            const isError = resultStr.includes('failed') || resultStr.includes('timed out');
+            const normalized = normalizeProbeResult(result);
+            const resultStr = normalized.lines.join('\n');
+            const isVulnerability = normalized.hasVulnerability;
+            const isError = normalized.hasError;
 
             doc.setFontSize(8);
             doc.setFont('Helvetica', 'bold');
@@ -768,10 +952,10 @@ export function generateJobReport({
       }
 
       // Web Tests Info
-      if (Object.keys(worker.webTestsInfo).length > 0) {
+      if (Object.keys(report.webTestsInfo).length > 0) {
         addHeader('Web Security Tests', 10, [59, 130, 246]);
 
-        Object.entries(worker.webTestsInfo).forEach(([port, tests]) => {
+        Object.entries(report.webTestsInfo).forEach(([port, tests]) => {
           checkPageBreak(20);
 
           doc.setFontSize(9);
@@ -784,9 +968,10 @@ export function generateJobReport({
             if (result === null || result === undefined) return;
 
             checkPageBreak(8);
-            const resultStr = String(result);
-            const isError = resultStr.startsWith('ERROR:');
-            const isVulnerable = resultStr.includes('VULNERABLE') || resultStr.includes('vulnerability');
+            const normalized = normalizeProbeResult(result);
+            const resultStr = normalized.lines.join('\n');
+            const isError = normalized.hasError;
+            const isVulnerable = normalized.hasVulnerability;
 
             doc.setFontSize(8);
             doc.setFont('Helvetica', 'bold');
@@ -813,15 +998,15 @@ export function generateJobReport({
       }
 
       // Completed tests summary
-      if (worker.completedTests && worker.completedTests.length > 0) {
+      if (report.completedTests && report.completedTests.length > 0) {
         checkPageBreak(15);
         doc.setFontSize(8);
         doc.setFont('Helvetica', 'bold');
         doc.setTextColor(...colors.muted);
-        doc.text(`Completed Tests (${worker.completedTests.length}):`, margin + 5, y);
+        doc.text(`Completed Tests (${report.completedTests.length}):`, margin + 5, y);
         y += 4;
         doc.setFont('Helvetica', 'normal');
-        const testsText = worker.completedTests.map(t => t.replace(/^_/, '')).join(', ');
+        const testsText = report.completedTests.map(t => t.replace(/^_/, '')).join(', ');
         const wrappedTests = doc.splitTextToSize(testsText, contentWidth - 10);
         wrappedTests.forEach((line: string) => {
           checkPageBreak(4);
@@ -832,273 +1017,13 @@ export function generateJobReport({
 
       y += 10;
 
-      if (idx < workersWithDetails.length - 1) {
+      if (idx < reportsWithDetails.length - 1) {
         addDivider();
       }
     });
   }
 
-  // === PASS HISTORY WITH REPORTS ===
-  if (job.passHistory && job.passHistory.length > 0) {
-    doc.addPage();
-    y = 20;
-    addHeader('Pass History', 14, colors.primary);
-    y += 5;
-
-    job.passHistory.forEach((pass, passIdx) => {
-      checkPageBreak(30);
-
-      // Pass header
-      doc.setFillColor(254, 226, 226);
-      doc.roundedRect(margin, y, contentWidth, 12, 2, 2, 'F');
-      y += 4;
-
-      doc.setFontSize(11);
-      doc.setFont('Helvetica', 'bold');
-      doc.setTextColor(...colors.primary);
-      doc.text(`Pass #${pass.passNr}`, margin + 5, y + 4);
-
-      doc.setFontSize(8);
-      doc.setFont('Helvetica', 'normal');
-      doc.setTextColor(...colors.muted);
-      doc.text(`Completed: ${formatDate(pass.completedAt)}`, margin + 60, y + 4);
-
-      y += 15;
-
-      // LLM Analysis for this pass (continuous mode)
-      if (llmAnalyses && llmAnalyses[pass.passNr]) {
-        renderLlmAnalysis(llmAnalyses[pass.passNr], pass.passNr);
-      }
-
-      // Reports for this pass
-      if (pass.reports && Object.keys(pass.reports).length > 0) {
-        Object.entries(pass.reports).forEach(([nodeAddr, cid], reportIdx) => {
-          checkPageBreak(50);
-
-          // Worker node header
-          doc.setFontSize(9);
-          doc.setFont('Helvetica', 'bold');
-          doc.setTextColor(...colors.secondary);
-          doc.text(`Worker: ${nodeAddr}`, margin + 5, y);
-          y += 4;
-
-          doc.setFontSize(7);
-          doc.setFont('Helvetica', 'normal');
-          doc.setTextColor(...colors.muted);
-          doc.text(`CID: ${cid}`, margin + 5, y);
-          y += 6;
-
-          // Get report data if available
-          const report = reports[cid] as WorkerReport | undefined;
-          if (report) {
-            // Report summary stats
-            doc.setFontSize(8);
-            doc.setTextColor(...colors.text);
-
-            const statsLines = [
-              `Target: ${report.target || job.target}`,
-              `Port Range: ${report.startPort} - ${report.endPort}`,
-              `Ports Scanned: ${report.portsScanned}`,
-              `Open Ports: ${report.nrOpenPorts || report.openPorts?.length || 0}`,
-              `Web Tested: ${report.webTested ? 'Yes' : 'No'}`,
-              `Progress: ${report.progress}`,
-              `Status: ${report.done ? 'Done' : report.canceled ? 'Canceled' : 'In Progress'}`
-            ];
-
-            statsLines.forEach((line) => {
-              checkPageBreak(4);
-              doc.text(line, margin + 10, y);
-              y += 4;
-            });
-            y += 2;
-
-            // Open ports
-            if (report.openPorts && report.openPorts.length > 0) {
-              checkPageBreak(10);
-              doc.setFont('Helvetica', 'bold');
-              doc.setTextColor(...colors.primary);
-              doc.text('Open Ports:', margin + 10, y);
-              y += 4;
-              doc.setFont('Helvetica', 'bold');
-              const portsStr = report.openPorts.join(', ');
-              const wrappedPorts = doc.splitTextToSize(portsStr, contentWidth - 20);
-              wrappedPorts.forEach((line: string) => {
-                checkPageBreak(4);
-                doc.text(line, margin + 15, y);
-                y += 4;
-              });
-              y += 2;
-            }
-
-            // Service Info (full JSON)
-            if (report.serviceInfo && Object.keys(report.serviceInfo).length > 0) {
-              checkPageBreak(15);
-              doc.setFont('Helvetica', 'bold');
-              doc.setTextColor(...colors.primary);
-              doc.text('Service Info:', margin + 10, y);
-              y += 5;
-              doc.setFont('Helvetica', 'normal');
-              doc.setFontSize(7);
-              doc.setTextColor(...colors.text);
-
-              Object.entries(report.serviceInfo).forEach(([port, info]) => {
-                checkPageBreak(8);
-                doc.setFont('Helvetica', 'bold');
-                doc.text(`Port ${port}:`, margin + 15, y);
-                y += 4;
-                doc.setFont('Helvetica', 'normal');
-
-                const infoJson = JSON.stringify(info, null, 2);
-                const infoLines = infoJson.split('\n');
-                infoLines.forEach((line) => {
-                  checkPageBreak(3.5);
-                  const wrapped = doc.splitTextToSize(line, contentWidth - 25);
-                  wrapped.forEach((wl: string) => {
-                    doc.text(wl, margin + 20, y);
-                    y += 3.5;
-                  });
-                });
-                y += 2;
-              });
-              doc.setFontSize(8);
-              y += 2;
-            }
-
-            // Web Tests Info (full JSON)
-            if (report.webTestsInfo && Object.keys(report.webTestsInfo).length > 0) {
-              checkPageBreak(15);
-              doc.setFont('Helvetica', 'bold');
-              doc.setTextColor(59, 130, 246);
-              doc.text('Web Tests Info:', margin + 10, y);
-              y += 5;
-              doc.setFont('Helvetica', 'normal');
-              doc.setFontSize(7);
-              doc.setTextColor(...colors.text);
-
-              Object.entries(report.webTestsInfo).forEach(([port, tests]) => {
-                checkPageBreak(8);
-                doc.setFont('Helvetica', 'bold');
-                doc.text(`Port ${port}:`, margin + 15, y);
-                y += 4;
-                doc.setFont('Helvetica', 'normal');
-
-                const testsJson = JSON.stringify(tests, null, 2);
-                const testsLines = testsJson.split('\n');
-                testsLines.forEach((line) => {
-                  checkPageBreak(3.5);
-                  const wrapped = doc.splitTextToSize(line, contentWidth - 25);
-                  wrapped.forEach((wl: string) => {
-                    doc.text(wl, margin + 20, y);
-                    y += 3.5;
-                  });
-                });
-                y += 2;
-              });
-              doc.setFontSize(8);
-              y += 2;
-            }
-
-            // Completed Tests
-            if (report.completedTests && report.completedTests.length > 0) {
-              checkPageBreak(10);
-              doc.setFont('Helvetica', 'bold');
-              doc.setTextColor(...colors.muted);
-              doc.text(`Completed Tests (${report.completedTests.length}):`, margin + 10, y);
-              y += 4;
-              doc.setFont('Helvetica', 'normal');
-              doc.setFontSize(7);
-              const testsStr = report.completedTests.map(t => t.replace(/^_/, '')).join(', ');
-              const wrappedTests = doc.splitTextToSize(testsStr, contentWidth - 20);
-              wrappedTests.forEach((line: string) => {
-                checkPageBreak(3.5);
-                doc.text(line, margin + 15, y);
-                y += 3.5;
-              });
-              doc.setFontSize(8);
-            }
-
-            // Full Report JSON
-            checkPageBreak(20);
-            y += 5;
-            doc.setFont('Helvetica', 'bold');
-            doc.setFontSize(8);
-            doc.setTextColor(...colors.secondary);
-            doc.text('Full Report JSON:', margin + 10, y);
-            y += 5;
-
-            doc.setFont('Courier', 'normal');
-            doc.setFontSize(6);
-            doc.setTextColor(...colors.text);
-
-            const fullJson = JSON.stringify(report, null, 2);
-            const jsonLines = fullJson.split('\n');
-            jsonLines.forEach((line) => {
-              checkPageBreak(3);
-              const wrapped = doc.splitTextToSize(line, contentWidth - 15);
-              wrapped.forEach((wl: string) => {
-                doc.text(wl, margin + 15, y);
-                y += 3;
-              });
-            });
-
-            doc.setFont('Helvetica', 'normal');
-            doc.setFontSize(8);
-          } else {
-            doc.setFontSize(8);
-            doc.setTextColor(...colors.muted);
-            doc.text('Report data not available (CID not fetched)', margin + 10, y);
-            y += 5;
-          }
-
-          y += 8;
-
-          // Divider between reports
-          if (reportIdx < Object.keys(pass.reports).length - 1) {
-            doc.setDrawColor(200, 200, 200);
-            doc.setLineWidth(0.3);
-            doc.line(margin + 10, y, pageWidth - margin - 10, y);
-            y += 5;
-          }
-        });
-      }
-
-      y += 10;
-
-      // Divider between passes
-      if (passIdx < job.passHistory!.length - 1) {
-        addDivider();
-      }
-    });
-  }
-
-  // === TIMELINE ===
-  if (job.timeline.length > 0) {
-    checkPageBreak(40);
-    addDivider();
-    addHeader('Timeline', 12);
-    y += 2;
-
-    job.timeline.forEach((entry, idx) => {
-      checkPageBreak(10);
-      doc.setFillColor(...colors.primary);
-      doc.circle(margin + 3, y - 1, 2, 'F');
-      if (idx < job.timeline.length - 1) {
-        doc.setDrawColor(...colors.light);
-        doc.setLineWidth(1);
-        doc.line(margin + 3, y + 2, margin + 3, y + 10);
-      }
-      doc.setFontSize(9);
-      doc.setFont('Helvetica', 'bold');
-      doc.setTextColor(...colors.text);
-      doc.text(entry.label, margin + 10, y);
-      doc.setFont('Helvetica', 'normal');
-      doc.setTextColor(...colors.muted);
-      doc.text(formatDate(entry.at), margin + 10, y + 4);
-      y += 12;
-    });
-  }
-
-  // Footer on all pages
+  // === FOOTER ===
   const totalPages = doc.internal.pages.length - 1;
   for (let i = 1; i <= totalPages; i++) {
     doc.setPage(i);

@@ -48,16 +48,38 @@ export interface JobAggregateReport {
   notes?: string;
 }
 
+export type JobEventType = 'created' | 'started' | 'completed' | 'finalized' | 'stopped'
+  | 'scheduled_for_stop' | 'pass_completed' | 'pass_started' | 'blockchain_submit' | 'llm_analysis';
+export type ActorType = 'system' | 'node' | 'user';
+
 export interface JobTimelineEntry {
+  type: JobEventType;
   label: string;
-  at: string;
+  date: string;
+  actor: string;
+  actorType: ActorType;
+  meta?: Record<string, unknown>;
 }
 
 export interface PassHistoryEntry {
   passNr: number;
+  startedAt?: string;
   completedAt: string;
+  duration?: number; // seconds
   reports: Record<string, string>; // node_address -> CID mapping
   llmAnalysisCid?: string; // CID for LLM analysis report (present for completed passes)
+  quickSummaryCid?: string; // CID for quick AI summary (2-4 sentences)
+  riskScore?: number; // 0-100 risk score for this pass
+  riskBreakdown?: RiskBreakdown;
+}
+
+export interface RiskBreakdown {
+  findingsScore: number;
+  openPortsScore: number;
+  breadthScore: number;
+  credentialsPenalty: number;
+  rawTotal: number;
+  findingCounts: Record<string, number>;
 }
 
 export interface LlmAnalysis {
@@ -107,12 +129,7 @@ export interface Job {
   initiatorAlias?: string; // Human-readable alias
   status: JobStatus;
   summary: string;
-  createdAt: string;
-  updatedAt: string;
-  startedAt?: string;
-  completedAt?: string;
-  finalizedAt?: string;
-  owner?: string;
+
   payloadUri?: string;
   priority: JobPriority;
   workerCount: number;
@@ -135,6 +152,8 @@ export interface Job {
   tempo?: JobTempo;
   tempoSteps?: JobTempoSteps;
   passHistory?: PassHistoryEntry[];
+  totalDuration?: number; // overall job duration in seconds
+  riskScore?: number; // 0-100 risk score (latest pass)
 }
 
 export interface CreateJobInput {
@@ -158,6 +177,16 @@ export interface CreateJobInput {
   scanDelay?: JobTempo;
   monitorInterval?: number; // Seconds between passes in continuous monitoring mode
   selectedPeers?: string[]; // List of peer addresses to run the test on
+  // Security hardening options
+  redactCredentials?: boolean;
+  icsSafeMode?: boolean;
+  rateLimitEnabled?: boolean;
+  scannerIdentity?: string;
+  scannerUserAgent?: string;
+  authorized?: boolean;
+  // User identity (who created the job from Navigator)
+  createdByName?: string;
+  createdById?: string;
 }
 
 export interface UserAccount {
