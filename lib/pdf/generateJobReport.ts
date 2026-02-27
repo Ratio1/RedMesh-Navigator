@@ -363,12 +363,11 @@ export function generateJobReport({
     addDivider();
   };
 
-  // === 1. COVER PAGE ===
-  // Header bar
+  // === 1. COVER PAGE + REPORT CONTEXT ===
+  // Red banner
   doc.setFillColor(...colors.primary);
   doc.rect(0, 0, pageWidth, 45, 'F');
 
-  // Title
   doc.setTextColor(255, 255, 255);
   doc.setFontSize(24);
   doc.setFont('Helvetica', 'bold');
@@ -382,7 +381,7 @@ export function generateJobReport({
 
   // Task Overview Box
   doc.setFillColor(...colors.light);
-  doc.roundedRect(margin, y, contentWidth, 45, 3, 3, 'F');
+  doc.roundedRect(margin, y, contentWidth, 30, 3, 3, 'F');
   y += 8;
 
   doc.setTextColor(...colors.text);
@@ -397,43 +396,10 @@ export function generateJobReport({
   doc.text(`Target: ${job.target}`, margin + 5, y);
   y += 5;
   doc.text(`Job ID: ${job.id}`, margin + 5, y);
-  y += 5;
 
-  // Status label and badge
-  doc.setFontSize(7);
-  doc.setFont('Helvetica', 'normal');
-  doc.setTextColor(...colors.muted);
-  doc.text('Status:', margin + 5, y);
-  y += 4;
+  y += 15;
 
-  const statusColor = job.status === JOB_STATUS.COMPLETED ? colors.primary :
-                      job.status === JOB_STATUS.STOPPED ? colors.primary :
-                      job.status === JOB_STATUS.STOPPING ? colors.warning :
-                      job.status === JOB_STATUS.RUNNING ? colors.warning : colors.secondary;
-  doc.setFillColor(...statusColor);
-  doc.roundedRect(margin + 5, y, 50, 8, 2, 2, 'F');
-  doc.setTextColor(255, 255, 255);
-  doc.setFontSize(8);
-  doc.setFont('Helvetica', 'bold');
-  doc.text(job.status.toUpperCase(), margin + 10, y + 5.5);
-
-  // Priority label and badge
-  doc.setFontSize(7);
-  doc.setFont('Helvetica', 'normal');
-  doc.setTextColor(...colors.muted);
-  doc.text('Priority:', margin + 60, y - 4);
-
-  doc.setFillColor(...colors.secondary);
-  doc.roundedRect(margin + 60, y, 40, 8, 2, 2, 'F');
-  doc.setTextColor(255, 255, 255);
-  doc.setFontSize(8);
-  doc.setFont('Helvetica', 'bold');
-  doc.text(job.priority.toUpperCase(), margin + 65, y + 5.5);
-
-  y += 20;
-
-  // === 2. REPORT OVERVIEW (merged Launcher + Timeline + Description) ===
-  addHeader('Report Overview', 11);
+  // Who requested
   if (job.initiatorAlias) {
     addLabelValue('Requested By', job.initiatorAlias);
   }
@@ -442,20 +408,22 @@ export function generateJobReport({
   } else {
     addLabelValue('Initiator', job.initiator);
   }
-  addLabelValue('Task', job.displayName);
-  addLabelValue('Target', job.target);
+
+  // What task
   if (job.summary && job.summary !== 'RedMesh scan job') {
-    addLabelValue('Summary', job.summary);
+    addLabelValue('Description', job.summary);
   }
-  addLabelValue('Priority', job.priority);
-  addLabelValue('Status', job.status);
+
+  // When reported
   addLabelValue('Report Produced', formatDate(new Date().toISOString()));
+
+  // Duration
   if (job.totalDuration != null) {
     addLabelValue('Duration', formatDuration(job.totalDuration));
   }
   y += 5;
 
-  // Visual Timeline (circles + lines)
+  // When executed — Visual Timeline (circles + lines)
   if (job.timeline.length > 0) {
     y += 2;
     job.timeline.forEach((entry, idx) => {
@@ -532,8 +500,8 @@ export function generateJobReport({
 
     if (bestQuickSummary?.content) {
       checkPageBreak(25);
-      doc.setFillColor(214, 40, 40, 0.05); // brand-primary/5
-      doc.setDrawColor(214, 40, 40, 0.2);  // brand-primary/20
+      doc.setFillColor(254, 242, 242); // red-50 — light tint of brand-primary
+      doc.setDrawColor(252, 202, 202); // red-200 — subtle border
       doc.roundedRect(margin, y, contentWidth, 20, 2, 2, 'FD');
       y += 5;
       doc.setFontSize(8);
@@ -797,380 +765,6 @@ export function generateJobReport({
       y += 10;
 
       if (idx < reportsWithDetails.length - 1) {
-        addDivider();
-      }
-    });
-  }
-
-  // === 6. APPENDIX: SCAN CONFIGURATION ===
-  doc.addPage();
-  y = 20;
-  addHeader('Appendix: Scan Configuration', 14, colors.primary);
-  y += 2;
-
-  addLabelValue('Run Mode', job.runMode === RUN_MODE.CONTINUOUS ? 'Continuous Monitoring' : 'Single Pass');
-  addLabelValue('Distribution', (job.distribution ?? 'slice').toUpperCase());
-  addLabelValue('Port Order', (job.portOrder ?? 'sequential').toUpperCase());
-  addLabelValue('Port Range', `${job.portRange?.start ?? 1} - ${job.portRange?.end ?? 65535}`);
-  if (job.tempo) {
-    addLabelValue('Scan Delay', `${job.tempo.minSeconds}s - ${job.tempo.maxSeconds}s`);
-  }
-  addLabelValue('Current Pass', String(job.currentPass));
-  if (job.monitorInterval) {
-    addLabelValue('Monitor Interval', `${job.monitorInterval}s`);
-  }
-  if (job.monitoringStatus) {
-    addLabelValue('Monitoring Status', job.monitoringStatus);
-  }
-  if (job.nextPassAt) {
-    addLabelValue('Next Pass At', formatDate(job.nextPassAt));
-  }
-  y += 5;
-  addDivider();
-
-  // Enabled Features (full list)
-  if (job.featureSet && job.featureSet.length > 0) {
-    addHeader(`Enabled Features (${job.featureSet.length})`, 11);
-    const serviceFeatures = job.featureSet.filter(f => f.includes('service_info'));
-    const webFeatures = job.featureSet.filter(f => f.includes('web_test'));
-    const otherFeatures = job.featureSet.filter(f => !f.includes('service_info') && !f.includes('web_test'));
-
-    if (serviceFeatures.length > 0) {
-      doc.setFontSize(8);
-      doc.setFont('Helvetica', 'bold');
-      doc.setTextColor(...colors.secondary);
-      checkPageBreak(5);
-      doc.text(`Service Detection (${serviceFeatures.length}):`, margin, y);
-      y += 4;
-      doc.setFont('Helvetica', 'normal');
-      doc.setTextColor(...colors.text);
-      const serviceText = serviceFeatures.map(f => f.replace(/^_service_info_/, '')).join(', ');
-      const serviceWrapped = doc.splitTextToSize(serviceText, contentWidth - 5);
-      serviceWrapped.forEach((line: string) => {
-        checkPageBreak(4);
-        doc.text(line, margin + 5, y);
-        y += 4;
-      });
-      y += 2;
-    }
-
-    if (webFeatures.length > 0) {
-      doc.setFontSize(8);
-      doc.setFont('Helvetica', 'bold');
-      doc.setTextColor(...colors.secondary);
-      checkPageBreak(5);
-      doc.text(`Web Security Tests (${webFeatures.length}):`, margin, y);
-      y += 4;
-      doc.setFont('Helvetica', 'normal');
-      doc.setTextColor(...colors.text);
-      const webText = webFeatures.map(f => f.replace(/^_web_test_/, '')).join(', ');
-      const webWrapped = doc.splitTextToSize(webText, contentWidth - 5);
-      webWrapped.forEach((line: string) => {
-        checkPageBreak(4);
-        doc.text(line, margin + 5, y);
-        y += 4;
-      });
-      y += 2;
-    }
-
-    if (otherFeatures.length > 0) {
-      doc.setFontSize(8);
-      doc.setFont('Helvetica', 'bold');
-      doc.setTextColor(...colors.secondary);
-      checkPageBreak(5);
-      doc.text(`Other Features (${otherFeatures.length}):`, margin, y);
-      y += 4;
-      doc.setFont('Helvetica', 'normal');
-      doc.setTextColor(...colors.text);
-      const otherText = otherFeatures.map(f => f.replace(/^_/, '')).join(', ');
-      const otherWrapped = doc.splitTextToSize(otherText, contentWidth - 5);
-      otherWrapped.forEach((line: string) => {
-        checkPageBreak(4);
-        doc.text(line, margin + 5, y);
-        y += 4;
-      });
-    }
-    y += 3;
-  }
-
-  // Excluded Features
-  if (job.excludedFeatures && job.excludedFeatures.length > 0) {
-    addHeader(`Excluded Features (${job.excludedFeatures.length})`, 11, colors.muted);
-    const excludedText = job.excludedFeatures.map(f => f.replace(/^_/, '').replace(/_/g, ' ')).join(', ');
-    const excludedWrapped = doc.splitTextToSize(excludedText, contentWidth);
-    doc.setFontSize(8);
-    doc.setFont('Helvetica', 'normal');
-    doc.setTextColor(...colors.muted);
-    excludedWrapped.forEach((line: string) => {
-      checkPageBreak(4);
-      doc.text(line, margin, y);
-      y += 4;
-    });
-    y += 3;
-  }
-
-  // Exception Ports
-  if (job.exceptionPorts && job.exceptionPorts.length > 0) {
-    addHeader('Exception Ports', 11);
-    addText(job.exceptionPorts.join(', '));
-    y += 3;
-  }
-
-  // === 7. APPENDIX: WORKER ASSIGNMENTS ===
-  const reportEntries = Object.entries(reports);
-  if (reportEntries.length > 0) {
-    addDivider();
-    addHeader('Appendix: Worker Assignments', 14, colors.primary);
-    y += 2;
-    reportEntries.forEach(([cid, report]) => {
-      checkPageBreak(8);
-      doc.setFontSize(8);
-      doc.setFont('Helvetica', 'bold');
-      doc.setTextColor(...colors.secondary);
-      const nodeAddress = cidToNodeAddress.get(cid) ?? cid;
-      doc.text(truncateAddress(nodeAddress), margin, y);
-      y += 4;
-      doc.setFont('Helvetica', 'normal');
-      doc.setTextColor(...colors.text);
-      const workerStatus = report.done ? 'Done' : report.canceled ? 'Canceled' : 'In Progress';
-      doc.text(`Ports ${report.startPort}-${report.endPort} | Status: ${workerStatus}`, margin + 5, y);
-      y += 5;
-    });
-    y += 3;
-  }
-
-  // === 8. APPENDIX: PASS HISTORY ===
-  if (job.passHistory && job.passHistory.length > 0) {
-    doc.addPage();
-    y = 20;
-    addHeader('Appendix: Pass History', 14, colors.primary);
-    y += 5;
-
-    job.passHistory.forEach((pass, passIdx) => {
-      checkPageBreak(30);
-
-      // Pass header
-      doc.setFillColor(254, 226, 226);
-      doc.roundedRect(margin, y, contentWidth, 12, 2, 2, 'F');
-      y += 4;
-
-      doc.setFontSize(11);
-      doc.setFont('Helvetica', 'bold');
-      doc.setTextColor(...colors.primary);
-      doc.text(`Pass #${pass.passNr}`, margin + 5, y + 4);
-
-      doc.setFontSize(8);
-      doc.setFont('Helvetica', 'normal');
-      doc.setTextColor(...colors.muted);
-      const passTimingParts = [`Completed: ${formatDate(pass.completedAt)}`];
-      if (pass.duration != null) {
-        passTimingParts.push(`Duration: ${formatDuration(pass.duration)}`);
-      }
-      doc.text(passTimingParts.join('  |  '), margin + 60, y + 4);
-
-      y += 15;
-
-      // LLM Analysis for this pass
-      if (llmAnalyses && llmAnalyses[pass.passNr]) {
-        renderLlmAnalysis(llmAnalyses[pass.passNr], pass.passNr);
-      }
-
-      // Reports for this pass
-      if (pass.reports && Object.keys(pass.reports).length > 0) {
-        Object.entries(pass.reports).forEach(([nodeAddr, cid], reportIdx) => {
-          checkPageBreak(50);
-
-          // Worker node header
-          doc.setFontSize(9);
-          doc.setFont('Helvetica', 'bold');
-          doc.setTextColor(...colors.secondary);
-          doc.text(`Worker: ${nodeAddr}`, margin + 5, y);
-          y += 4;
-
-          doc.setFontSize(7);
-          doc.setFont('Helvetica', 'normal');
-          doc.setTextColor(...colors.muted);
-          doc.text(`CID: ${cid}`, margin + 5, y);
-          y += 6;
-
-          // Get report data if available
-          const report = reports[cid] as WorkerReport | undefined;
-          if (report) {
-            // Report summary stats
-            doc.setFontSize(8);
-            doc.setTextColor(...colors.text);
-
-            const statsLines = [
-              `Target: ${report.target || job.target}`,
-              `Port Range: ${report.startPort} - ${report.endPort}`,
-              `Ports Scanned: ${report.portsScanned}`,
-              `Open Ports: ${report.nrOpenPorts || report.openPorts?.length || 0}`,
-              `Web Tested: ${report.webTested ? 'Yes' : 'No'}`,
-              `Progress: ${report.progress}`,
-              `Status: ${report.done ? 'Done' : report.canceled ? 'Canceled' : 'In Progress'}`
-            ];
-
-            statsLines.forEach((line) => {
-              checkPageBreak(4);
-              doc.text(line, margin + 10, y);
-              y += 4;
-            });
-            y += 2;
-
-            // Open ports
-            if (report.openPorts && report.openPorts.length > 0) {
-              checkPageBreak(10);
-              doc.setFont('Helvetica', 'bold');
-              doc.setTextColor(...colors.primary);
-              doc.text('Open Ports:', margin + 10, y);
-              y += 4;
-              doc.setFont('Helvetica', 'bold');
-              const portsStr = report.openPorts.join(', ');
-              const wrappedPorts = doc.splitTextToSize(portsStr, contentWidth - 20);
-              wrappedPorts.forEach((line: string) => {
-                checkPageBreak(4);
-                doc.text(line, margin + 15, y);
-                y += 4;
-              });
-              y += 2;
-            }
-
-            // Service Info (full JSON)
-            if (report.serviceInfo && Object.keys(report.serviceInfo).length > 0) {
-              checkPageBreak(15);
-              doc.setFont('Helvetica', 'bold');
-              doc.setTextColor(...colors.primary);
-              doc.text('Service Info:', margin + 10, y);
-              y += 5;
-              doc.setFont('Helvetica', 'normal');
-              doc.setFontSize(7);
-              doc.setTextColor(...colors.text);
-
-              Object.entries(report.serviceInfo).forEach(([port, info]) => {
-                checkPageBreak(8);
-                doc.setFont('Helvetica', 'bold');
-                doc.text(`Port ${port}:`, margin + 15, y);
-                y += 4;
-                doc.setFont('Helvetica', 'normal');
-
-                const infoJson = JSON.stringify(info, null, 2);
-                const infoLines = infoJson.split('\n');
-                infoLines.forEach((line) => {
-                  checkPageBreak(3.5);
-                  const wrapped = doc.splitTextToSize(line, contentWidth - 25);
-                  wrapped.forEach((wl: string) => {
-                    doc.text(wl, margin + 20, y);
-                    y += 3.5;
-                  });
-                });
-                y += 2;
-              });
-              doc.setFontSize(8);
-              y += 2;
-            }
-
-            // Web Tests Info (full JSON)
-            if (report.webTestsInfo && Object.keys(report.webTestsInfo).length > 0) {
-              checkPageBreak(15);
-              doc.setFont('Helvetica', 'bold');
-              doc.setTextColor(59, 130, 246);
-              doc.text('Web Tests Info:', margin + 10, y);
-              y += 5;
-              doc.setFont('Helvetica', 'normal');
-              doc.setFontSize(7);
-              doc.setTextColor(...colors.text);
-
-              Object.entries(report.webTestsInfo).forEach(([port, tests]) => {
-                checkPageBreak(8);
-                doc.setFont('Helvetica', 'bold');
-                doc.text(`Port ${port}:`, margin + 15, y);
-                y += 4;
-                doc.setFont('Helvetica', 'normal');
-
-                const testsJson = JSON.stringify(tests, null, 2);
-                const testsLines = testsJson.split('\n');
-                testsLines.forEach((line) => {
-                  checkPageBreak(3.5);
-                  const wrapped = doc.splitTextToSize(line, contentWidth - 25);
-                  wrapped.forEach((wl: string) => {
-                    doc.text(wl, margin + 20, y);
-                    y += 3.5;
-                  });
-                });
-                y += 2;
-              });
-              doc.setFontSize(8);
-              y += 2;
-            }
-
-            // Completed Tests
-            if (report.completedTests && report.completedTests.length > 0) {
-              checkPageBreak(10);
-              doc.setFont('Helvetica', 'bold');
-              doc.setTextColor(...colors.muted);
-              doc.text(`Completed Tests (${report.completedTests.length}):`, margin + 10, y);
-              y += 4;
-              doc.setFont('Helvetica', 'normal');
-              doc.setFontSize(7);
-              const testsStr = report.completedTests.map(t => t.replace(/^_/, '')).join(', ');
-              const wrappedTests = doc.splitTextToSize(testsStr, contentWidth - 20);
-              wrappedTests.forEach((line: string) => {
-                checkPageBreak(3.5);
-                doc.text(line, margin + 15, y);
-                y += 3.5;
-              });
-              doc.setFontSize(8);
-            }
-
-            // Full Report JSON
-            checkPageBreak(20);
-            y += 5;
-            doc.setFont('Helvetica', 'bold');
-            doc.setFontSize(8);
-            doc.setTextColor(...colors.secondary);
-            doc.text('Full Report JSON:', margin + 10, y);
-            y += 5;
-
-            doc.setFont('Courier', 'normal');
-            doc.setFontSize(6);
-            doc.setTextColor(...colors.text);
-
-            const fullJson = JSON.stringify(report, null, 2);
-            const jsonLines = fullJson.split('\n');
-            jsonLines.forEach((line) => {
-              checkPageBreak(3);
-              const wrapped = doc.splitTextToSize(line, contentWidth - 15);
-              wrapped.forEach((wl: string) => {
-                doc.text(wl, margin + 15, y);
-                y += 3;
-              });
-            });
-
-            doc.setFont('Helvetica', 'normal');
-            doc.setFontSize(8);
-          } else {
-            doc.setFontSize(8);
-            doc.setTextColor(...colors.muted);
-            doc.text('Report data not available (CID not fetched)', margin + 10, y);
-            y += 5;
-          }
-
-          y += 8;
-
-          // Divider between reports
-          if (reportIdx < Object.keys(pass.reports).length - 1) {
-            doc.setDrawColor(200, 200, 200);
-            doc.setLineWidth(0.3);
-            doc.line(margin + 10, y, pageWidth - margin - 10, y);
-            y += 5;
-          }
-        });
-      }
-
-      y += 10;
-
-      // Divider between passes
-      if (passIdx < job.passHistory!.length - 1) {
         addDivider();
       }
     });
