@@ -1,5 +1,6 @@
 const randomUUID = () => crypto.randomUUID();
 import {
+  ActorType,
   AuthSuccess,
   CreateJobInput,
   Job,
@@ -81,15 +82,15 @@ function buildWorker(
   };
 }
 
-function buildTimeline(entries: Array<{ type: JobEventType; label: string; at: Date; actor?: string }>): JobTimelineEntry[] {
+function buildTimeline(entries: Array<{ type: JobEventType; label: string; at: Date; actor?: string; actorType?: ActorType }>): JobTimelineEntry[] {
   return entries
     .sort((a, b) => a.at.getTime() - b.at.getTime())
-    .map(({ type, label, at, actor }) => ({
+    .map(({ type, label, at, actor, actorType }) => ({
       type,
       label,
       date: at.toISOString(),
       actor: actor ?? 'mock-node',
-      actorType: 'node' as const,
+      actorType: actorType ?? 'node',
     }));
 }
 
@@ -328,6 +329,7 @@ export function getMockJobs(): Job[] {
 export function createMockJob(input: CreateJobInput): Job {
   const now = new Date();
   const duration = input.duration ?? DURATION.SINGLEPASS;
+  const createdByName = input.createdByName;
   const job: Job = {
     id: randomUUID(),
     displayName: input.name,
@@ -343,7 +345,13 @@ export function createMockJob(input: CreateJobInput): Job {
     excludedFeatures: [],
     workers: [],
     aggregate: undefined,
-    timeline: buildTimeline([{ type: 'created', label: 'Job created', at: now }]),
+    timeline: buildTimeline([{
+      type: 'created',
+      label: `Job created by ${createdByName}`,
+      at: now,
+      actor: createdByName || 'operator',
+      actorType: 'user',
+    }]),
     lastError: undefined,
     distribution: input.distribution ?? 'slice',
     duration,

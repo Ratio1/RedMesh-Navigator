@@ -139,6 +139,8 @@ export async function POST(request: Request) {
   const rateLimitEnabled = body.rateLimitEnabled !== false;
   const scannerIdentity = typeof body.scannerIdentity === 'string' ? body.scannerIdentity.trim() : '';
   const scannerUserAgent = typeof body.scannerUserAgent === 'string' ? body.scannerUserAgent.trim() : '';
+  const createdByName = typeof body.createdByName === 'string' ? body.createdByName.trim() : '';
+  const createdById = typeof body.createdById === 'string' ? body.createdById.trim() : '';
 
   const payload: CreateJobInput = {
     name: body.name,
@@ -164,7 +166,9 @@ export async function POST(request: Request) {
     rateLimitEnabled,
     scannerIdentity: scannerIdentity || undefined,
     scannerUserAgent: scannerUserAgent || undefined,
-    authorized: true
+    authorized: true,
+    createdByName: createdByName || undefined,
+    createdById: createdById || undefined
   };
 
   jobsLogger.debug('Calling createJob with payload:', payload);

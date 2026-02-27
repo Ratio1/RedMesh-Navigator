@@ -182,7 +182,9 @@ export default function JobForm({ onCreated }: JobFormProps): JSX.Element {
       rateLimitEnabled,
       scannerIdentity: scannerIdentity.trim() || undefined,
       scannerUserAgent: scannerUserAgent.trim() || undefined,
-      authorized
+      authorized,
+      createdByName: user?.displayName ?? user?.username,
+      createdById: user?.username
     };
 
     console.log('[JobForm] Sending request to /api/jobs:', requestBody);

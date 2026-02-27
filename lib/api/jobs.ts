@@ -549,7 +549,9 @@ function createJobInputToLaunchRequest(input: CreateJobInput): LaunchTestRequest
     rate_limit_enabled: input.rateLimitEnabled,
     scanner_identity: input.scannerIdentity || undefined,
     scanner_user_agent: input.scannerUserAgent || undefined,
-    authorized: input.authorized
+    authorized: input.authorized,
+    created_by_name: input.createdByName || undefined,
+    created_by_id: input.createdById || undefined
   };
 }
 

@@ -41,6 +41,9 @@ export interface LaunchTestRequest {
   scanner_identity?: string;
   scanner_user_agent?: string;
   authorized?: boolean;
+  // User identity (forwarded from Navigator UI)
+  created_by_name?: string;
+  created_by_id?: string;
 }
 
 // Worker Assignment

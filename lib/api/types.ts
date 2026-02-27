@@ -171,6 +171,9 @@ export interface CreateJobInput {
   scannerIdentity?: string;
   scannerUserAgent?: string;
   authorized?: boolean;
+  // User identity (who created the job from Navigator)
+  createdByName?: string;
+  createdById?: string;
 }
 
 export interface UserAccount {
