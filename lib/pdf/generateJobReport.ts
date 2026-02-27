@@ -140,6 +140,9 @@ export function generateJobReport({
     y += 6;
   };
 
+  const truncateAddress = (addr: string) =>
+    addr.length > 20 ? `${addr.slice(0, 8)}...${addr.slice(-8)}` : addr;
+
   /**
    * Render markdown text content to PDF with inline formatting support.
    * Handles headers, lists, code blocks, bold, italic, and inline code.
@@ -456,14 +459,12 @@ export function generateJobReport({
 
   y += 15;
 
-  // Who requested
-  if (job.initiatorAlias) {
-    addLabelValue('Requested By', job.initiatorAlias);
-  }
+  // Who requested — find the user who initiated the job from timeline
+  const userEvent = job.timeline.find(e => e.actorType === 'user');
+  const requestedBy = userEvent?.actor ?? job.initiatorAlias ?? job.initiator;
+  addLabelValue('Requested By', requestedBy);
   if (job.initiatorAddress) {
-    addLabelValue('Launcher Address', job.initiatorAddress);
-  } else {
-    addLabelValue('Initiator', job.initiator);
+    addLabelValue('Launcher Node', job.initiatorAddress);
   }
 
   // What task
@@ -480,47 +481,178 @@ export function generateJobReport({
   }
   y += 5;
 
-  // When executed — Visual Timeline (circles + lines)
+  // When executed — Visual Timeline
   if (job.timeline.length > 0) {
+    const dotColors: Record<string, RGB> = {
+      created: [148, 163, 184],   // slate-400
+      started: [52, 211, 153],    // emerald-400
+      pass_started: [52, 211, 153],
+      completed: [34, 197, 94],   // emerald-500
+      pass_completed: [34, 197, 94],
+      finalized: [96, 165, 250],  // blue-400
+      stopped: [251, 113, 133],   // rose-400
+      scheduled_for_stop: [251, 191, 36], // amber-400
+      blockchain_submit: [192, 132, 252], // purple-400
+      llm_analysis: [34, 211, 238],       // cyan-400
+    };
+    const actorTypeBadge: Record<string, { label: string; color: RGB }> = {
+      user: { label: 'USR', color: [52, 211, 153] },    // emerald-400
+      node: { label: 'NOD', color: [251, 191, 36] },    // amber-400
+      system: { label: 'SYS', color: [148, 163, 184] }, // slate-400
+    };
+
     y += 2;
     job.timeline.forEach((entry, idx) => {
-      checkPageBreak(10);
-      doc.setFillColor(...colors.primary);
-      doc.circle(margin + 3, y - 1, 2, 'F');
+      const hasMeta = entry.meta && Object.keys(entry.meta).length > 0;
+      const entryHeight = hasMeta ? 20 : 16;
+      checkPageBreak(entryHeight + 2);
+
+      // Colored dot
+      const dot = dotColors[entry.type] ?? colors.primary;
+      doc.setFillColor(...dot);
+      doc.circle(margin + 3, y, 2.5, 'F');
+
+      // Connector line
       if (idx < job.timeline.length - 1) {
         doc.setDrawColor(...colors.light);
-        doc.setLineWidth(1);
-        doc.line(margin + 3, y + 2, margin + 3, y + 10);
+        doc.setLineWidth(0.8);
+        doc.line(margin + 3, y + 3, margin + 3, y + entryHeight);
       }
+
+      // Event label
       doc.setFontSize(9);
       doc.setFont('Helvetica', 'bold');
       doc.setTextColor(...colors.text);
-      doc.text(entry.label, margin + 10, y);
+      doc.text(entry.label, margin + 10, y + 1);
+
+      // Actor type badge (USR / NOD / SYS)
+      const badge = actorTypeBadge[entry.actorType] ?? actorTypeBadge.system;
+      const badgeX = margin + 10 + doc.getTextWidth(entry.label) + 3;
+      doc.setFontSize(6);
+      doc.setFont('Helvetica', 'bold');
+      const badgeWidth = doc.getTextWidth(badge.label) + 4;
+      doc.setDrawColor(...badge.color);
+      doc.setLineWidth(0.4);
+      doc.roundedRect(badgeX, y - 3.5, badgeWidth, 6, 1, 1, 'S');
+      doc.setTextColor(...badge.color);
+      doc.text(badge.label, badgeX + 2, y + 1);
+
+      // Date + actor
+      doc.setFontSize(7);
       doc.setFont('Helvetica', 'normal');
       doc.setTextColor(...colors.muted);
-      doc.text(formatDate(entry.date), margin + 10, y + 4);
-      y += 12;
+      const hasActor = entry.actor && entry.actor !== 'system' && entry.actor !== 'unknown';
+      const dateLine = hasActor
+        ? `${formatDate(entry.date)}  ·  ${truncateAddress(entry.actor)}`
+        : formatDate(entry.date);
+      doc.text(dateLine, margin + 10, y + 5.5);
+
+      // Meta entries
+      if (hasMeta) {
+        let metaX = margin + 10;
+        const metaY = y + 10;
+        doc.setFontSize(6);
+        Object.entries(entry.meta!).forEach(([key, value]) => {
+          const metaText = `${key}: ${typeof value === 'object' ? JSON.stringify(value) : String(value)}`;
+          const metaWidth = doc.getTextWidth(metaText) + 4;
+          if (metaX + metaWidth > pageWidth - margin) return; // skip if overflow
+          doc.setFillColor(241, 245, 249); // slate-100
+          doc.roundedRect(metaX, metaY - 3, metaWidth, 5, 1, 1, 'F');
+          doc.setTextColor(...colors.muted);
+          doc.text(metaText, metaX + 2, metaY);
+          metaX += metaWidth + 2;
+        });
+      }
+
+      y += entryHeight;
     });
   }
 
-  addDivider();
+  // Scan Scope
+  const reportsList = Object.values(reports);
+  const totalPortsScanned = reportsList.reduce((sum, r) => sum + r.portsScanned, 0);
+  const serviceTests = (job.featureSet ?? []).filter(f => f.includes('service_info')).length;
+  const webTests = (job.featureSet ?? []).filter(f => f.includes('web_test')).length;
 
-  // === 3. SUMMARY STATISTICS ===
-  addHeader('Summary Statistics', 11);
+  checkPageBreak(45);
+
+  // Section label
+  doc.setFontSize(9);
+  doc.setFont('Helvetica', 'bold');
+  doc.setTextColor(...colors.secondary);
+  doc.text('SCAN SCOPE', margin, y);
+  y += 5;
+
+  // Card background
+  const scopeCardY = y;
+  const scopeCardHeight = 38;
+  doc.setFillColor(...colors.light);
+  doc.roundedRect(margin, scopeCardY, contentWidth, scopeCardHeight, 2, 2, 'F');
+
+  // Top row: 3 stat cells — Port Range, Ports Scanned, Workers
+  const scopeStats = [
+    { label: 'Port Range', value: `${job.portRange?.start ?? 1} – ${job.portRange?.end ?? 65535}` },
+    { label: 'Ports Scanned', value: String(totalPortsScanned) },
+    { label: 'Workers', value: String(workerActivity.length || job.workerCount) },
+  ];
+
+  const scopeStatWidth = contentWidth / scopeStats.length;
+  y = scopeCardY + 6;
+  scopeStats.forEach((stat, i) => {
+    const x = margin + i * scopeStatWidth + scopeStatWidth / 2;
+    doc.setFontSize(13);
+    doc.setFont('Helvetica', 'bold');
+    doc.setTextColor(...colors.secondary);
+    doc.text(stat.value, x, y + 4, { align: 'center' });
+    doc.setFontSize(7);
+    doc.setFont('Helvetica', 'normal');
+    doc.setTextColor(...colors.muted);
+    doc.text(stat.label, x, y + 10, { align: 'center' });
+  });
+
+  // Separator line inside card
+  y = scopeCardY + 22;
+  doc.setDrawColor(220, 225, 232); // slate-200
+  doc.setLineWidth(0.3);
+  doc.line(margin + 5, y, margin + contentWidth - 5, y);
+
+  // Bottom row: Run Mode + Tests Enabled (compact inline)
+  y += 6;
+  const runModeLabel = job.runMode === RUN_MODE.CONTINUOUS ? 'Continuous Monitoring' : 'Single Pass';
+  doc.setFontSize(7);
+  doc.setFont('Helvetica', 'bold');
+  doc.setTextColor(...colors.muted);
+  doc.text('Mode:', margin + 8, y);
+  doc.setFont('Helvetica', 'normal');
+  doc.setTextColor(...colors.text);
+  doc.text(runModeLabel, margin + 8 + doc.getTextWidth('Mode: '), y);
+
+  if (serviceTests > 0 || webTests > 0) {
+    const testsX = margin + contentWidth / 2;
+    const parts: string[] = [];
+    if (serviceTests > 0) parts.push(`${serviceTests} service detection`);
+    if (webTests > 0) parts.push(`${webTests} web security`);
+    doc.setFont('Helvetica', 'bold');
+    doc.setTextColor(...colors.muted);
+    doc.text('Tests:', testsX, y);
+    doc.setFont('Helvetica', 'normal');
+    doc.setTextColor(...colors.text);
+    doc.text(parts.join(', '), testsX + doc.getTextWidth('Tests: '), y);
+  }
+
+  y = scopeCardY + scopeCardHeight + 6;
+
+  // === 3. AGGREGATE FINDINGS ===
+  addHeader('Aggregate Findings', 11);
   y += 2;
 
-  const reportsList = Object.values(reports);
   const totalOpenPorts = aggregatedPorts.ports.length;
-  const totalPortsScanned = reportsList.reduce((sum, r) => sum + r.portsScanned, 0);
   const reportsWithDetails = Object.entries(reports).filter(([, r]) => Object.keys(r.serviceInfo).length > 0 || Object.keys(r.webTestsInfo).length > 0);
-  const workersWithFindings = reportsList.filter(r => r.openPorts.length > 0 || Object.keys(r.serviceInfo).length > 0).length;
 
   const stats = [
-    { label: 'Workers', value: String(workerActivity.length || job.workerCount) },
-    { label: 'Port Range', value: `${job.portRange?.start ?? 1} - ${job.portRange?.end ?? 65535}` },
-    { label: 'Ports Scanned', value: String(totalPortsScanned) },
-    { label: 'Open Ports Found', value: String(totalOpenPorts) },
-    { label: 'Workers with Findings', value: String(workersWithFindings) },
+    { label: 'Open Ports', value: String(totalOpenPorts) },
+    { label: 'Identified Services', value: String(aggregatedPorts.totalServices) },
+    { label: 'Findings', value: String(aggregatedPorts.totalFindings) },
   ];
 
   doc.setFillColor(...colors.light);
@@ -616,9 +748,6 @@ export function generateJobReport({
       }
     }
   }
-
-  const truncateAddress = (addr: string) =>
-    addr.length > 20 ? `${addr.slice(0, 8)}...${addr.slice(-8)}` : addr;
 
   // === 5. DETAILED FINDINGS (new page) ===
   const hasFindings = totalOpenPorts > 0 || job.aggregate || reportsWithDetails.length > 0;
