@@ -1,9 +1,12 @@
 'use client';
 
+import React, { useState } from 'react';
 import { format } from 'date-fns';
 import Card from '@/components/ui/Card';
 import Tooltip from '@/components/ui/Tooltip';
 import type { JobTimelineEntry, ActorType, JobEventType } from '@/lib/api/types';
+
+const COLLAPSED_LIMIT = 5;
 
 function formatDate(value?: string): string {
   if (!value) return '--';
@@ -56,25 +59,44 @@ interface JobTimelineProps {
 }
 
 export function JobTimeline({ timeline }: JobTimelineProps) {
+  const [expanded, setExpanded] = useState(false);
+  const needsTruncation = timeline.length > COLLAPSED_LIMIT;
+  const visibleEntries = needsTruncation && !expanded
+    ? [...timeline.slice(0, 3), ...timeline.slice(-2)]
+    : timeline;
+  const hiddenCount = timeline.length - visibleEntries.length;
+
   return (
     <Card title="Timeline">
       <ol className="relative space-y-4">
         {/* Vertical connector line */}
-        {timeline.length > 1 && (
+        {visibleEntries.length > 1 && (
           <span
             className="absolute left-[5px] top-2 bottom-2 w-px bg-white/10"
             aria-hidden
           />
         )}
 
-        {timeline.map((entry) => {
+        {visibleEntries.map((entry, idx) => {
           const dotColor = EVENT_DOT_COLOR[entry.type] ?? 'bg-brand-primary';
           const actorStyle = ACTOR_TYPE_STYLES[entry.actorType] ?? ACTOR_TYPE_STYLES.system;
           const hasActor = entry.actor && entry.actor !== 'system' && entry.actor !== 'unknown';
+          const showExpandButton = needsTruncation && !expanded && idx === 3;
 
           return (
+            <React.Fragment key={`${entry.type}-${entry.date}`}>
+            {showExpandButton && (
+              <li className="relative flex items-start gap-3 pl-0">
+                <span className="relative z-10 mt-1.5 h-[10px] w-[10px] shrink-0" />
+                <button
+                  onClick={() => setExpanded(true)}
+                  className="text-xs text-slate-400 hover:text-slate-200 transition-colors cursor-pointer"
+                >
+                  Show {hiddenCount} more event{hiddenCount !== 1 ? 's' : ''}...
+                </button>
+              </li>
+            )}
             <li
-              key={`${entry.type}-${entry.date}`}
               className="relative flex items-start gap-3 text-sm text-slate-300 pl-0"
             >
               {/* Event dot */}
@@ -121,8 +143,21 @@ export function JobTimeline({ timeline }: JobTimelineProps) {
                 )}
               </div>
             </li>
+            </React.Fragment>
           );
         })}
+
+        {needsTruncation && expanded && (
+          <li className="relative flex items-start gap-3 pl-0">
+            <span className="relative z-10 mt-1.5 h-[10px] w-[10px] shrink-0" />
+            <button
+              onClick={() => setExpanded(false)}
+              className="text-xs text-slate-400 hover:text-slate-200 transition-colors cursor-pointer"
+            >
+              Show less
+            </button>
+          </li>
+        )}
       </ol>
     </Card>
   );

@@ -167,12 +167,12 @@ export default function JobDetailsPage(): JSX.Element {
           onRefresh={refresh}
         />
 
-        <section className="grid gap-6 lg:grid-cols-3">
+        <section className="relative z-10 grid gap-6 lg:grid-cols-3">
           <AggregateFindings job={job} aggregatedPorts={aggregatedPorts} quickSummary={quickSummaries[1]} />
           <JobMeta job={job} workerActivity={workerActivity} />
         </section>
 
-        <section className="grid gap-6 lg:grid-cols-2">
+        <section className="relative z-0 grid gap-6 lg:grid-cols-2">
           <JobTimeline timeline={job.timeline} />
           <EnabledFeatures features={job.featureSet ?? []} />
         </section>
