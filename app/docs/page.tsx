@@ -400,40 +400,94 @@ export default function DocsPage(): JSX.Element {
             </div>
 
             <div>
-              <SectionHeading>Score Components</SectionHeading>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <div className="rounded-lg border border-white/10 bg-slate-900/40 p-3">
-                  <p className="text-xs font-semibold text-slate-100 mb-1">Finding Severity</p>
+              <SectionHeading>Step 1: Raw Score (4 components summed)</SectionHeading>
+              <div className="space-y-3">
+                {/* A. Finding Severity */}
+                <div className="rounded-lg border border-white/10 bg-slate-900/40 p-3 space-y-2">
+                  <p className="text-xs font-semibold text-slate-100">A. Finding Severity</p>
                   <p className="text-xs text-slate-400">
-                    Each finding contributes based on its severity (CRITICAL=40, HIGH=25, MEDIUM=10, LOW=2)
-                    multiplied by confidence (certain=1.0, firm=0.8, tentative=0.5).
+                    Every finding contributes: <code className="text-xs bg-white/10 px-1.5 py-0.5 rounded text-slate-300">severity_weight × confidence_multiplier</code>. These stack across all findings.
                   </p>
+                  <div className="grid grid-cols-2 gap-3">
+                    <table className="w-full text-xs">
+                      <thead><tr className="text-slate-500 border-b border-white/5"><th className="text-left pb-1">Severity</th><th className="text-right pb-1">Weight</th></tr></thead>
+                      <tbody className="text-slate-300">
+                        <tr><td className="py-0.5">CRITICAL</td><td className="text-right">40</td></tr>
+                        <tr><td className="py-0.5">HIGH</td><td className="text-right">25</td></tr>
+                        <tr><td className="py-0.5">MEDIUM</td><td className="text-right">10</td></tr>
+                        <tr><td className="py-0.5">LOW</td><td className="text-right">2</td></tr>
+                        <tr><td className="py-0.5">INFO</td><td className="text-right">0</td></tr>
+                      </tbody>
+                    </table>
+                    <table className="w-full text-xs">
+                      <thead><tr className="text-slate-500 border-b border-white/5"><th className="text-left pb-1">Confidence</th><th className="text-right pb-1">Multiplier</th></tr></thead>
+                      <tbody className="text-slate-300">
+                        <tr><td className="py-0.5">certain</td><td className="text-right">×1.0</td></tr>
+                        <tr><td className="py-0.5">firm</td><td className="text-right">×0.8</td></tr>
+                        <tr><td className="py-0.5">tentative</td><td className="text-right">×0.5</td></tr>
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
-                <div className="rounded-lg border border-white/10 bg-slate-900/40 p-3">
-                  <p className="text-xs font-semibold text-slate-100 mb-1">Open Ports</p>
+
+                {/* B. Open Ports */}
+                <div className="rounded-lg border border-white/10 bg-slate-900/40 p-3 space-y-2">
+                  <p className="text-xs font-semibold text-slate-100">B. Open Ports (max ~15 pts)</p>
                   <p className="text-xs text-slate-400">
-                    More open ports increase the score with diminishing returns. 1 port adds ~2 points, 10 ports ~11, 50+ saturates at ~15.
+                    Diminishing returns: <code className="text-xs bg-white/10 px-1.5 py-0.5 rounded text-slate-300">15 × (1 − e<sup>−ports/8</sup>)</code>
                   </p>
+                  <p className="text-xs text-slate-500">1 port → 1.8 pts &nbsp;·&nbsp; 5 → 7 &nbsp;·&nbsp; 10 → 10.7 &nbsp;·&nbsp; 50+ → ~15</p>
                 </div>
-                <div className="rounded-lg border border-white/10 bg-slate-900/40 p-3">
-                  <p className="text-xs font-semibold text-slate-100 mb-1">Protocol Diversity</p>
+
+                {/* C. Protocol Diversity */}
+                <div className="rounded-lg border border-white/10 bg-slate-900/40 p-3 space-y-2">
+                  <p className="text-xs font-semibold text-slate-100">C. Protocol Diversity (max ~10 pts)</p>
                   <p className="text-xs text-slate-400">
-                    More distinct protocols (HTTP, SSH, MySQL, etc.) increase the attack surface score, up to ~10 points.
+                    Distinct protocols detected: <code className="text-xs bg-white/10 px-1.5 py-0.5 rounded text-slate-300">10 × (1 − e<sup>−protocols/4</sup>)</code>
                   </p>
+                  <p className="text-xs text-slate-500">1 protocol → 2.2 pts &nbsp;·&nbsp; 3 → 5.3 &nbsp;·&nbsp; 5 → 7.1 &nbsp;·&nbsp; 8+ → ~10</p>
                 </div>
-                <div className="rounded-lg border border-white/10 bg-slate-900/40 p-3">
-                  <p className="text-xs font-semibold text-slate-100 mb-1">Default Credentials</p>
+
+                {/* D. Default Credentials */}
+                <div className="rounded-lg border border-white/10 bg-slate-900/40 p-3 space-y-2">
+                  <p className="text-xs font-semibold text-slate-100">D. Default Credentials Penalty (max 30 pts)</p>
                   <p className="text-xs text-slate-400">
-                    Each accepted default credential adds 15 points, capped at 30. These represent immediate exploitation risk.
+                    Each accepted default credential: <code className="text-xs bg-white/10 px-1.5 py-0.5 rounded text-slate-300">min(count × 15, 30)</code>
                   </p>
+                  <p className="text-xs text-slate-500">1 cred → 15 pts &nbsp;·&nbsp; 2+ → 30 (capped)</p>
                 </div>
               </div>
             </div>
 
+            <div>
+              <SectionHeading>Step 2: Normalize to 0–100</SectionHeading>
+              <div className="rounded-lg border border-white/10 bg-slate-900/40 p-3 space-y-3">
+                <p className="text-xs text-slate-400">
+                  The raw sum is squashed via a logistic (S-shaped) curve:
+                </p>
+                <p className="text-center">
+                  <code className="text-sm bg-white/10 px-3 py-1.5 rounded text-slate-200">score = 100 × (2 / (1 + e<sup>−0.02 × raw</sup>) − 1)</code>
+                </p>
+                <p className="text-xs text-slate-400">
+                  Low raw scores map proportionally. High raw scores saturate — once raw exceeds ~200, the score is effectively 100.
+                </p>
+                <table className="w-full text-xs">
+                  <thead><tr className="text-slate-500 border-b border-white/5"><th className="text-left pb-1">Raw</th><th className="text-left pb-1">Score</th><th className="text-left pb-1">Example</th></tr></thead>
+                  <tbody className="text-slate-300">
+                    <tr><td className="py-0.5">0</td><td>0</td><td className="text-slate-500">No findings, no open ports</td></tr>
+                    <tr><td className="py-0.5">25</td><td>~24</td><td className="text-slate-500">A few LOW/MEDIUM findings</td></tr>
+                    <tr><td className="py-0.5">50</td><td>~46</td><td className="text-slate-500">1 CRITICAL + some open ports</td></tr>
+                    <tr><td className="py-0.5">100</td><td>~76</td><td className="text-slate-500">2 HIGH + 3 MEDIUM + 5 open ports</td></tr>
+                    <tr><td className="py-0.5">150</td><td>~90</td><td className="text-slate-500">Multiple HIGH/CRITICAL findings</td></tr>
+                    <tr><td className="py-0.5">200+</td><td>~96–100</td><td className="text-slate-500">Severe exposure, default credentials</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
             <p className="text-xs text-slate-500">
-              The raw sum of all components is normalized to 0–100 via a logistic curve. The score appears in the
-              Aggregate Findings section, PDF reports, and is stored per-pass for trend tracking in continuous monitoring mode.
-              Hover the score badge for a quick reference of all risk bands.
+              The score appears in the Aggregate Findings section, PDF reports, and is stored per-pass for trend tracking
+              in continuous monitoring mode. Hover the score badge for a quick reference of all risk bands.
             </p>
           </div>
         </Card>
