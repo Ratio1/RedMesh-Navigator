@@ -103,6 +103,7 @@ interface DiscoveredPortsProps {
 }
 
 export function DiscoveredPorts({ aggregatedPorts }: DiscoveredPortsProps) {
+  const [sectionExpanded, setSectionExpanded] = useState(false);
   const [selectedPort, setSelectedPort] = useState<number | null>(null);
   const [portsExpanded, setPortsExpanded] = useState(false);
   const [expandedResults, setExpandedResults] = useState<Set<string>>(new Set());
@@ -346,11 +347,33 @@ export function DiscoveredPorts({ aggregatedPorts }: DiscoveredPortsProps) {
 
   return (
     <Card
-      title="Discovered Open Ports"
-      description={`${aggregatedPorts.ports.length} unique port${aggregatedPorts.ports.length !== 1 ? 's' : ''} found across all workers. Click a port to see details.`}
+      title={
+        <button
+          onClick={() => setSectionExpanded(!sectionExpanded)}
+          className="flex items-center gap-2 w-full text-left cursor-pointer group"
+        >
+          <svg
+            className={`w-4 h-4 text-slate-400 transition-transform duration-200 ${sectionExpanded ? 'rotate-90' : ''}`}
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+          </svg>
+          <span>Discovered Open Ports</span>
+          <span className="text-xs text-slate-500 font-normal">
+            ({aggregatedPorts.ports.length} port{aggregatedPorts.ports.length !== 1 ? 's' : ''})
+          </span>
+        </button>
+      }
+      description={sectionExpanded ? `${aggregatedPorts.ports.length} unique port${aggregatedPorts.ports.length !== 1 ? 's' : ''} found across all workers. Click a port to see details.` : undefined}
       className="lg:col-span-2"
     >
-      {aggregatedPorts.ports.length === 0 ? (
+      {!sectionExpanded ? (
+        <p className="text-sm text-slate-400">
+          Click to expand and view discovered open ports with details.
+        </p>
+      ) : aggregatedPorts.ports.length === 0 ? (
         <p className="text-sm text-slate-400">No open ports discovered yet.</p>
       ) : (
         <div className="space-y-4">

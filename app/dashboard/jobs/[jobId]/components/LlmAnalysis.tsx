@@ -232,9 +232,6 @@ export function LlmAnalysis({ analysis, passNr }: LlmAnalysisProps) {
       {!expanded ? (
         <div className="flex items-center gap-4">
           <Badge tone={getRiskTone()} label={analysis.analysisType.replace(/_/g, ' ')} />
-          <span className="text-sm text-slate-400">
-            Analyzed by {analysis.model} on {formatDate(analysis.createdAt)}
-          </span>
         </div>
       ) : (
         <div className="space-y-4">

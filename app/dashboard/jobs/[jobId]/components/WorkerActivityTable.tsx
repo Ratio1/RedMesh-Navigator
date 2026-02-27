@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import Card from '@/components/ui/Card';
 import type { WorkerActivityItem } from '../types';
 
@@ -8,9 +9,36 @@ interface WorkerActivityTableProps {
 }
 
 export function WorkerActivityTable({ workerActivity }: WorkerActivityTableProps) {
+  const [expanded, setExpanded] = useState(false);
+
   return (
-    <Card title="Worker activity" description="Per-worker coverage and progress">
-      {workerActivity.length === 0 ? (
+    <Card
+      title={
+        <button
+          onClick={() => setExpanded(!expanded)}
+          className="flex items-center gap-2 w-full text-left cursor-pointer group"
+        >
+          <svg
+            className={`w-4 h-4 text-slate-400 transition-transform duration-200 ${expanded ? 'rotate-90' : ''}`}
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+          </svg>
+          <span>Worker Activity</span>
+          <span className="text-xs text-slate-500 font-normal">
+            ({workerActivity.length} worker{workerActivity.length !== 1 ? 's' : ''})
+          </span>
+        </button>
+      }
+      description={expanded ? "Per-worker coverage and progress" : undefined}
+    >
+      {!expanded ? (
+        <p className="text-sm text-slate-400">
+          Click to expand and view per-worker coverage and progress.
+        </p>
+      ) : workerActivity.length === 0 ? (
         <p className="text-sm text-slate-300">No workers attached yet.</p>
       ) : (
         <div className="overflow-x-auto">
