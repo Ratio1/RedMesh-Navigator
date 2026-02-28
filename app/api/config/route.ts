@@ -4,6 +4,7 @@ import { getDefaultFeatureCatalog, RedMeshFeature } from '@/lib/domain/features'
 import { getRatioEdgeClient } from '@/lib/services/edgeClient';
 import { APP_VERSION } from '@/lib/config/version';
 import { getRedMeshApiService, FeatureCatalogItem } from '@/lib/services/redmeshApi';
+import { createPublicClient, formatEther, http } from 'viem';
 
 /**
  * Transform FeatureCatalogItem from API to RedMeshFeature for UI.
@@ -38,6 +39,8 @@ export async function GET() {
   let r1fsStatus: unknown = null;
   let cstoreError: string | null = null;
   let r1fsError: string | null = null;
+  let tenantWalletBalanceEth: string | null = null;
+  let tenantWalletBalanceError: string | null = null;
   let featureCatalog: RedMeshFeature[] = getDefaultFeatureCatalog();
 
   if (config.mockMode || config.forceMockTasks) {
@@ -66,6 +69,21 @@ export async function GET() {
     }
   }
 
+  if (config.tenantWalletAddress && config.evmRpcUrl) {
+    try {
+      const client = createPublicClient({
+        transport: http(config.evmRpcUrl)
+      });
+      const balanceWei = await client.getBalance({
+        address: config.tenantWalletAddress as `0x${string}`
+      });
+      tenantWalletBalanceEth = formatEther(balanceWei);
+    } catch (error) {
+      tenantWalletBalanceError =
+        error instanceof Error ? error.message : 'Failed to read tenant wallet balance.';
+    }
+  }
+
   return NextResponse.json({
     hostId: config.hostId ?? null,
     mockMode: config.mockMode,
@@ -78,6 +96,9 @@ export async function GET() {
     chainstoreApiConfigured: Boolean(config.chainstoreApiUrl),
     r1fsApiConfigured: Boolean(config.r1fsApiUrl),
     chainstorePeers: config.chainstorePeers,
+    tenantWalletAddress: config.tenantWalletAddress ?? null,
+    tenantWalletBalanceEth,
+    tenantWalletBalanceError,
     featureCatalog,
     cstoreStatus,
     r1fsStatus,

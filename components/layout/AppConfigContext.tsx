@@ -34,6 +34,9 @@ export interface ClientRuntimeConfig {
   r1fsApiConfigured: boolean;
   featureCatalog: RedMeshFeature[];
   chainstorePeers: string[];
+  tenantWalletAddress: string | null;
+  tenantWalletBalanceEth: string | null;
+  tenantWalletBalanceError: string | null;
   cstoreStatus: unknown;
   r1fsStatus: unknown;
   cstoreError: string | null;

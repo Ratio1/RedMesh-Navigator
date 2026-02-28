@@ -34,12 +34,36 @@ function StatusDot({ active }: { active: boolean }): JSX.Element {
   );
 }
 
+function shortenAddress(address: string): string {
+  if (address.length <= 14) {
+    return address;
+  }
+  return `${address.slice(0, 8)}...${address.slice(-6)}`;
+}
+
+function formatWalletBalance(balanceEth: string | null): string {
+  if (!balanceEth) {
+    return '--';
+  }
+  const parsed = Number.parseFloat(balanceEth);
+  if (!Number.isFinite(parsed)) {
+    return balanceEth;
+  }
+  if (parsed >= 1) {
+    return parsed.toFixed(4).replace(/\.?0+$/, '');
+  }
+  return parsed.toFixed(6).replace(/\.?0+$/, '');
+}
+
 export default function AppShell({ children }: PropsWithChildren<{}>): JSX.Element {
   const { user, signOut } = useAuth();
   const { config } = useAppConfig();
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
   const appVersion = config?.appVersion ?? APP_VERSION;
+  const tenantWalletAddress = config?.tenantWalletAddress ?? null;
+  const tenantWalletBalanceEth = config?.tenantWalletBalanceEth ?? null;
+  const tenantWalletBalanceError = config?.tenantWalletBalanceError ?? null;
 
   const displayName = user?.displayName ?? user?.username ?? 'Signed out';
   const roleLabel = user ? user.roles.join(', ') || 'No roles' : 'Signed out';
@@ -205,6 +229,15 @@ export default function AppShell({ children }: PropsWithChildren<{}>): JSX.Eleme
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-3 text-slate-500">
+            {tenantWalletAddress && (
+              <span
+                className="rounded-full border border-white/10 bg-slate-900/70 px-3 py-1 text-[11px] font-semibold tracking-[0.08em] text-slate-200"
+                title={tenantWalletAddress}
+              >
+                Tenant wallet {shortenAddress(tenantWalletAddress)} |{' '}
+                {tenantWalletBalanceError ? 'Balance unavailable' : `${formatWalletBalance(tenantWalletBalanceEth)} ETH`}
+              </span>
+            )}
             <AppVersionBadge />
           </div>
           <div className="flex flex-wrap items-center gap-3">
