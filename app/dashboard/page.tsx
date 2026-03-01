@@ -21,7 +21,9 @@ export default function DashboardPage(): JSX.Element {
 
   // Jobs that have at least one completed pass (have findings data)
   const finishedJobs = [...completedJobs, ...stoppedJobs];
-  const jobsWithPassHistory = finishedJobs.filter((job) => job.passHistory && job.passHistory.length > 0);
+  const jobsWithPassHistory = finishedJobs.filter((job) =>
+    (job.passHistory && job.passHistory.length > 0) || (job.passCount != null && job.passCount > 0)
+  );
 
   const filteredJobs = filter === 'ongoing' ? ongoingJobs : filter === 'stopped' ? stoppedJobs : completedJobs;
 

@@ -81,6 +81,7 @@ export interface JobSpecs {
   job_pass?: number;
   next_pass_at?: number | null;
   pass_history?: PassHistoryEntry[];
+  pass_count?: number;  // Lightweight count returned by list_network_jobs (pass_history stripped)
   scan_min_delay: number;
   scan_max_delay: number;
   task_name?: string;

@@ -152,6 +152,7 @@ export interface Job {
   tempo?: JobTempo;
   tempoSteps?: JobTempoSteps;
   passHistory?: PassHistoryEntry[];
+  passCount?: number; // lightweight pass count from listing endpoint (pass_history stripped)
   totalDuration?: number; // overall job duration in seconds
   riskScore?: number; // 0-100 risk score (latest pass)
 }

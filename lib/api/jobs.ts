@@ -384,6 +384,7 @@ function normalizeJobFromSpecs(specs: JobSpecs): Job {
       : undefined,
     tempoSteps: undefined,
     passHistory,
+    passCount: passHistory ? passHistory.length : specs.pass_count,
     totalDuration: specs.duration ?? undefined,
     riskScore: specs.risk_score,
   };
