@@ -36,10 +36,11 @@ export default function JobDetailsPage(): JSX.Element {
   const router = useRouter();
   const { user, loading } = useAuth();
   const { job, reports, llmAnalyses, quickSummaries, refresh, loading: jobLoading, error: jobError, notFound } = useJob(params.jobId);
-  const { stopJob, stopMonitoring, loading: actionLoading } = useJobActions();
+  const { stopJob, stopMonitoring, purgeJob, loading: actionLoading } = useJobActions();
 
   const [stopping, setStopping] = useState(false);
   const [stoppingMonitoring, setStoppingMonitoring] = useState(false);
+  const [purging, setPurging] = useState(false);
 
   // Derived data
   const aggregatedPorts = useAggregatedPorts(reports, job);
@@ -85,6 +86,27 @@ export default function JobDetailsPage(): JSX.Element {
       window.alert(`Error: ${message}`);
     } finally {
       setStoppingMonitoring(false);
+    }
+  };
+
+  const handlePurgeJob = async () => {
+    if (!job) return;
+
+    const confirmed = window.confirm(
+      `Are you sure you want to permanently delete "${job.displayName}"?\n\nThis will remove all scan reports and data. This action cannot be undone.`
+    );
+
+    if (!confirmed) return;
+
+    setPurging(true);
+    try {
+      await purgeJob(params.jobId);
+      router.push('/dashboard');
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to delete job.';
+      window.alert(`Error: ${message}`);
+    } finally {
+      setPurging(false);
     }
   };
 
@@ -161,9 +183,11 @@ export default function JobDetailsPage(): JSX.Element {
           job={job}
           stopping={stopping}
           stoppingMonitoring={stoppingMonitoring}
+          purging={purging}
           actionLoading={actionLoading}
           onStopJob={handleStopJob}
           onStopMonitoring={handleStopMonitoring}
+          onPurgeJob={handlePurgeJob}
           onRefresh={refresh}
         />
 

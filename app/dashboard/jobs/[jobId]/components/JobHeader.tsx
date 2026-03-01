@@ -8,14 +8,17 @@ import { RUN_MODE, DURATION, JOB_STATUS } from '@/lib/api/constants';
 
 const DEFAULT_PORT_START = 1;
 const DEFAULT_PORT_END = 65535;
+const IS_DEV = process.env.NODE_ENV === 'development';
 
 interface JobHeaderProps {
   job: Job;
   stopping: boolean;
   stoppingMonitoring: boolean;
+  purging?: boolean;
   actionLoading: boolean;
   onStopJob: () => void;
   onStopMonitoring: () => void;
+  onPurgeJob?: () => void;
   onRefresh: () => void;
 }
 
@@ -23,9 +26,11 @@ export function JobHeader({
   job,
   stopping,
   stoppingMonitoring,
+  purging,
   actionLoading,
   onStopJob,
   onStopMonitoring,
+  onPurgeJob,
   onRefresh,
 }: JobHeaderProps) {
   return (
@@ -84,6 +89,16 @@ export function JobHeader({
             title="Stop already requested"
           >
             Stopping...
+          </Button>
+        )}
+        {IS_DEV && job.status !== JOB_STATUS.RUNNING && job.status !== JOB_STATUS.STOPPING && (
+          <Button
+            variant="danger"
+            size="sm"
+            onClick={onPurgeJob}
+            disabled={purging || actionLoading}
+          >
+            {purging ? 'Deleting...' : 'Delete Job'}
           </Button>
         )}
         <Button variant="secondary" size="sm" onClick={onRefresh}>

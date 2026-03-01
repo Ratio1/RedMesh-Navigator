@@ -227,6 +227,14 @@ export interface StopAndDeleteJobResponse {
   job_id: string;
 }
 
+// Purge Job Response
+export interface PurgeJobResponse {
+  status: string;
+  job_id: string;
+  cids_deleted: number;
+  cids_total: number;
+}
+
 // Stop Monitoring Request
 export interface StopMonitoringRequest {
   job_id: string;

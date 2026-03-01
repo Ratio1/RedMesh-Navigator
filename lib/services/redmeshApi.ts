@@ -12,6 +12,7 @@ import {
   FeatureCatalogResponse,
   ListJobsResponse,
   StopAndDeleteJobResponse,
+  PurgeJobResponse,
   StopMonitoringRequest,
   StopMonitoringResponse,
   GetReportResponse,
@@ -179,6 +180,16 @@ export class RedMeshApiService {
    */
   async stopAndDeleteJob(jobId: string): Promise<StopAndDeleteJobResponse> {
     return this.request<StopAndDeleteJobResponse>('GET', '/stop_and_delete_job', {
+      params: { job_id: jobId },
+    });
+  }
+
+  /**
+   * Purge a job: delete all R1FS artifacts and tombstone the CStore entry.
+   * Job must be finished/canceled — cannot purge a running job.
+   */
+  async purgeJob(jobId: string): Promise<PurgeJobResponse> {
+    return this.request<PurgeJobResponse>('GET', '/purge_job', {
       params: { job_id: jobId },
     });
   }

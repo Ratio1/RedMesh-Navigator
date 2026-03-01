@@ -22,9 +22,17 @@ interface StopMonitoringResult {
   }>;
 }
 
+interface PurgeJobResult {
+  status: string;
+  job_id: string;
+  cids_deleted: number;
+  cids_total: number;
+}
+
 interface UseJobActionsReturn {
   stopJob: (jobId: string) => Promise<StopJobResult>;
   stopMonitoring: (jobId: string, stopType?: StopType) => Promise<StopMonitoringResult>;
+  purgeJob: (jobId: string) => Promise<PurgeJobResult>;
   loading: boolean;
   error: string | null;
   clearError: () => void;
@@ -103,9 +111,37 @@ export function useJobActions(): UseJobActionsReturn {
     }
   }, []);
 
+  const purgeJob = useCallback(async (jobId: string): Promise<PurgeJobResult> => {
+    setLoading(true);
+    setError(null);
+
+    try {
+      const response = await fetch(`/api/jobs/${encodeURIComponent(jobId)}/purge`, {
+        method: 'DELETE'
+      });
+
+      const payload = await response.json().catch(() => null);
+
+      if (!response.ok) {
+        const message = payload?.message || 'Failed to delete job.';
+        setError(message);
+        throw new Error(message);
+      }
+
+      return payload as PurgeJobResult;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to delete job.';
+      setError(message);
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
   return {
     stopJob,
     stopMonitoring,
+    purgeJob,
     loading,
     error,
     clearError
